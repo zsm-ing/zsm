@@ -5,7 +5,7 @@
 
 # 脚本下载URL
 DEBIAN_MAIN_SCRIPT_URL="https://gh-proxy.com/https://raw.githubusercontent.com/qljsyph/sbshell/refs/heads/main/debian/menu.sh"
-OPENWRT_MAIN_SCRIPT_URL="https://gh-proxy.com/https://raw.githubusercontent.com/zming66/zsm/refs/heads/main/openwrt/menu.sh"
+OPENWRT_MAIN_SCRIPT_URL="https://gh-proxy.com/https://raw.githubusercontent.com/zsm-ing/zsm/refs/heads/main/openwrt/menu.sh"
 
 # 脚本存放目录
 SCRIPT_DIR="/etc/sing-box/scripts"
