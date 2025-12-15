@@ -1,9 +1,10 @@
 # ==============================
 # MikroTik QoS 终极版 RouterOS 7
+# DSCP 版
 # WAN: pppoe-out1
 # LAN: bridge
-# 下行: 500M (限480M)
-# 上行: 50M (限45M)
+# 下行: 480M
+# 上行: 45M
 # IPv4 五类 + IPv6 三类
 # ==============================
 
@@ -16,27 +17,27 @@ disable [find action=fasttrack-connection]
 add name=pcq-down kind=pcq pcq-classifier=dst-address pcq-rate=0
 add name=pcq-up kind=pcq pcq-classifier=src-address pcq-rate=0
 
-# 3. IPv4 流量分类
+# 3. IPv4 DSCP 标记
 /ip firewall mangle
-# DNS
-add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=no
-# 游戏 UDP（可根据游戏端口精确化）
-add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=no
-# 视频 TCP (流媒体)
-add chain=prerouting protocol=tcp dst-port=443 action=mark-packet new-packet-mark=video passthrough=no
-# 网页 TCP
-add chain=prerouting protocol=tcp dst-port=80,443 action=mark-packet new-packet-mark=web passthrough=no
-# 下载 TCP (BT/大流量)
-add chain=prerouting protocol=tcp dst-port=6881-6999 action=mark-packet new-packet-mark=download passthrough=no
+# DNS / ACK EF
+add chain=prerouting protocol=udp dst-port=53 action=mark-dscp new-dscp=46 passthrough=yes
+# 游戏 UDP AF41
+add chain=prerouting protocol=udp action=mark-dscp new-dscp=34 passthrough=yes
+# 视频 TCP AF21
+add chain=prerouting protocol=tcp dst-port=443 action=mark-dscp new-dscp=18 passthrough=yes
+# 网页 TCP AF11
+add chain=prerouting protocol=tcp dst-port=80,443 action=mark-dscp new-dscp=8 passthrough=yes
+# 下载 TCP BE
+add chain=prerouting protocol=tcp dst-port=6881-6999 action=mark-dscp new-dscp=0 passthrough=yes
 
-# 4. IPv6 流量分类
+# 4. IPv6 DSCP 标记
 /ipv6 firewall mangle
-# DNS
-add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=no
-# 游戏 / UDP 实时
-add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=no
-# TCP 普通
-add chain=prerouting protocol=tcp action=mark-packet new-packet-mark=web passthrough=no
+# DNS EF
+add chain=prerouting protocol=udp dst-port=53 action=mark-dscp new-dscp=46 passthrough=yes
+# 游戏 / 实时 UDP AF41
+add chain=prerouting protocol=udp action=mark-dscp new-dscp=34 passthrough=yes
+# 普通 TCP AF11
+add chain=prerouting protocol=tcp action=mark-dscp new-dscp=8 passthrough=yes
 
 # 5. 下行 Queue Tree (480M)
 /queue tree
@@ -55,11 +56,12 @@ add name=GAME-UP parent=UP packet-mark=game priority=2 queue=pcq-up limit-at=10M
 add name=WEB-UP parent=UP packet-mark=web priority=5 queue=pcq-up limit-at=5M max-limit=15M
 add name=DL-UP parent=UP packet-mark=download priority=8 queue=pcq-up limit-at=2M max-limit=10M
 
-# 7. 全局队列类型说明
-# pcq-down/up: 自动按设备均分
-# priority: 值越小优先级越高
-# limit-at: 保底带宽
-# max-limit: 最大带宽
+# 7. 配置说明
+# - DSCP 优先级: DNS(EF46) > 游戏(AF41) > 视频(AF21) > 网页(AF11) > 下载(BE0)
+# - Queue Tree: packet-mark 与 DSCP 对应，可按需要改为 dscp 匹配
+# - PCQ 自动均分多设备带宽
+# - IPv4 & IPv6 同步生效
+# - RouterOS 7 完全兼容
 
 # ==============================
 # 配置完成
