@@ -1,0 +1,42 @@
+name: Update China IP Lists
+
+on:
+  schedule:
+    - cron: '0 23 * * 6'  # 每天UTC时间12:00运行
+  workflow_dispatch:       # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  generate-lists:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Generate IPv4 list
+        run: python generate_ipv4_list.py
+        
+      - name: Generate IPv6 list
+        run: python generate_ipv6_list.py
+        
+      - name: Check if files changed
+        id: changes
+        run: |
+          git status --porcelain
+          echo "changes=$(git status --porcelain | wc -l | tr -d ' ')" >> $GITHUB_OUTPUT
+          
+      - name: Commit changes
+        if: steps.changes.outputs.changes != '0'
+        run: |
+          git config --local user.email "github-actions@example.com"
+          git config --local user.name "GitHub Actions"
+          git add china-ipv4.rsc china-ipv6.rsc
+          git commit -am "Update China IP lists - $(date +'%Y-%m-%d')"
+          git push

@@ -1,0 +1,251 @@
+########################################################################
+#    CloudFlare DDNS Updater for MikroTik RouterOS                     #
+#    Author: tty228 (https://github.com/tty228/mikrotik-scripts)       #
+########################################################################
+
+################# 用户配置（必填） #################
+# IPv4 接口名称
+:local CFiface "pppoe-out1"
+
+# IPv6 接口名称
+:local CFiface6 "pppoe-out1"
+
+# 区域 ID（zone-id）
+:local CFzoneid "xxxxxx"
+
+# API 令牌（api-token）
+# 创建令牌->编辑区域 DNS (请勿使用全局 API)
+:local CFtoken "xxxxxx"
+
+# 域名列表：格式为 "domain|A" 或 "domain|AAAA"
+:local DomainsToUpdate {
+	"v4.domain.com|A";
+	"v6.domain.com|AAAA";
+	"ds.domain.com|A";
+	"ds.domain.com|AAAA";
+}
+
+################# 默认配置（选填） #################
+# LANipv6end: IPV6 后缀（可填写局域网内 LAN 固定后缀解析到内网某个设备），如果是本机，通常是 "::1"
+# MacTarget: 使用 MAC 地址匹配设备 IPv6 地址，这基于 IPv6 邻居查找，适用于设备后缀不固定的情况（如果使用这个选项，请使用“定时任务”、或“拨号后自动运行”时使用一定的延迟，因为 /ipv6 neighbor 获得的地址不会随路由器重新拨号实时变化）
+# 以下选项二选一，默认使用 LANipv6end
+:local LANipv6end "::1"
+:local MacTarget ""
+
+# TTL 值，设置为 1 时为自动
+:local CFttl 1
+
+# 强制检查更新的时间间隔（秒），如需要每次运行时都检查当前域名记录，请设置为 0
+:local forceInterval 3600
+
+# 是否启用 DEBUG 模式，首次运行时可以打开以排错（true / false）
+:local Debug true
+
+################# 内部变量（无需修改） #################
+:global lastUpdateTime
+:global previousIPv4
+:global previousIPv6
+:local updateUrl
+:local httpMethod
+:local CFdomain
+:local recordType
+:local currentIP
+:local previousIP
+:local recordLookupUrl
+:local result
+:local response
+:local postData
+:local recordId ""
+:local recordIP ""
+:local WANip ""
+:local Dhcpv6Prefix
+:local Dhcpv6prefixBase
+:local NeighborAddr
+:local NeighborAddrPrefix
+:local NeighborPrefixCheck
+:local authHeader
+:local doForce false
+:local needUpdate false
+:local secondsPassed
+:local allRecordsUpdated true
+:local currentDate [/system clock get date]
+:local currentTime [/system clock get time]
+:local yearStart [:find $currentDate "-"]
+:local monthStart [:find $currentDate "-" ($yearStart + 1)]
+:local currentYear [:pick $currentDate 0 $yearStart]
+:local currentMonth [:pick $currentDate ($yearStart + 1) $monthStart]
+:local currentDay [:pick $currentDate ($monthStart + 1) [:len $currentDate]]
+:local hourStart [:find $currentTime ":"]
+:local minuteStart [:find $currentTime ":" ($hourStart + 1)]
+:local currentHour [:pick $currentTime 0 $hourStart]
+:local currentMinute [:pick $currentTime ($hourStart + 1) $minuteStart]
+:local currentSecond [:pick $currentTime ($minuteStart + 1) [:len $currentTime]]
+:local totalSeconds ((($currentYear - 1970) * 365 * 24 * 60 * 60) + ($currentMonth * 30 * 24 * 60 * 60) + ($currentDay * 24 * 60 * 60) + ($currentHour * 60 * 60) + ($currentMinute * 60) + $currentSecond)
+
+################# 主程序 #################
+:foreach domainRecord in=$DomainsToUpdate do={
+
+	# === 拆分域名列表 ===
+	:set CFdomain [:pick $domainRecord 0 [:find $domainRecord "|"]]
+	:set recordType [:pick $domainRecord ([:find $domainRecord "|"] + 1) [:len $domainRecord]]
+
+	# === 初始化 lastUpdateTime 变量 ===
+	:if ([:len ($lastUpdateTime)] = 0) do={ :set $lastUpdateTime 0 }
+
+	# === 获取当前 WAN IP ===
+	:if ($recordType = "A") do={
+		:set currentIP [/ip address get [/ip address find interface=$CFiface] address]
+		:set WANip [:pick $currentIP 0 [:find $currentIP "/"]]
+		:set previousIP $previousIPv4
+		:if ($Debug) do={ :log info "[DEBUG] WAN IPv4 地址: $WANip" }
+	} else={
+		:if ([/ipv6 dhcp-client get [find interface=$CFiface6] status] = "bound") do={
+			:set Dhcpv6Prefix [/ipv6 dhcp-client get [find interface=$CFiface6 status=bound] prefix]
+			:set Dhcpv6prefixBase [:pick $Dhcpv6Prefix 0 [:find $Dhcpv6Prefix "::/"]]
+			:if ($Debug) do={ :log info "[DEBUG] IPv6 前缀: $Dhcpv6prefixBase" }
+			:if ([:len $LANipv6end] > 0) do={
+				:set WANip ([:pick $Dhcpv6Prefix 0 [:find $Dhcpv6Prefix "::/"]] . $LANipv6end)
+				:set WANip ($Dhcpv6prefixBase . $LANipv6end)
+			} else={
+				:if ([:len $MacTarget] > 0) do={
+					:foreach n in=[/ipv6 neighbor find where mac-address=$MacTarget] do={
+						:set NeighborAddr [/ipv6 neighbor get $n address]
+						:set NeighborAddrPrefix [:pick $NeighborAddr 0 ([:len $Dhcpv6prefixBase])]
+						:set NeighborPrefixCheck [:pick $NeighborAddr 0 2]
+						# 比较 neighbor 地址的前缀和 DHCPv6 拿到的前缀
+						:if ($NeighborAddrPrefix = $Dhcpv6prefixBase) do={
+							:set WANip $NeighborAddr
+						}
+					}
+				}
+			}
+			:set previousIP $previousIPv6
+			:if ($Debug) do={ :log info "[DEBUG] WAN IPv6 地址: $WANip" }
+		} else={
+			:log warning "无法获取 WAN IPv6 地址，请检查接口设置。"
+		}
+	}
+
+	# === 判断是否需要更新 ===
+	:if (($totalSeconds - $lastUpdateTime) > $forceInterval) do={
+		:set doForce true
+	}
+
+	:if ($Debug) do={
+		:set secondsPassed ($totalSeconds - $lastUpdateTime)
+		:log info "[DEBUG] 距离上次更新已经 $secondsPassed 秒"
+	}
+
+	:if (($WANip != "") and ($WANip != $previousIP)) do={
+		:if ($Debug) do={ :log info "[DEBUG] 缓存的 IP : $previousIP" }
+		:set needUpdate true
+	} else={
+		:if (($WANip != "") and ($doForce)) do={
+			:if ($Debug) do={ :log info "[DEBUG] 超过强制时间间隔，强制检查更新" }
+			:set needUpdate true
+		}
+	}
+
+	# === 域名解析 ===
+	:if ($needUpdate and ($WANip != "")) do={
+		:if ($Debug) do={ :log info "[DEBUG] 处理 $CFdomain → $WANip" }
+
+		# === 获取已有域名解析记录 ===
+		:set recordLookupUrl "https://api.cloudflare.com/client/v4/zones/$CFzoneid/dns_records?type=$recordType&name=$CFdomain"
+		:set authHeader "Authorization: Bearer $CFtoken"
+
+		:if ($Debug) do={
+			:log info "[DEBUG] 查询记录: $recordLookupUrl"
+		}
+
+		:set result [/tool fetch mode=https url=$recordLookupUrl \
+			http-header-field=("$authHeader,Content-Type: application/json") \
+			as-value output=user]
+
+		:set response ($result->"data")
+
+		:if ($Debug) do={
+			:log info "[DEBUG] API 响应内容: $response"
+		}
+
+		:if ([:find $response "\"id\":\""] > 0) do={
+			:set recordId [:pick $response ([:find $response "\"id\":\""] + 6) [:find $response "\",\"" [:find $response "\"id\":\""]]]
+		}
+
+		:if ([:find $response "\"content\":\""] > 0) do={
+			:set recordIP [:pick $response ([:find $response "\"content\":\""] + 11) [:find $response "\"" ([:find $response "\"content\":\""] + 11)]]
+		}
+			
+		# 缓存提交成功的 IP 记录
+		:if ($recordIP != "") do={
+			:if ($recordType = "A") do={
+				:set previousIPv4 $recordIP
+			} else={
+				:set previousIPv6 $recordIP
+			}
+		}
+
+		:if ($Debug) do={
+			:log info "[DEBUG] 当前解析 IP: $recordIP，Cloudflare 记录 ID: $recordId"
+		}
+
+		# === 比较是否需要更新 ===
+		:if ($recordIP != $WANip) do={
+			:set postData "{\"type\":\"$recordType\",\"name\":\"$CFdomain\",\"content\":\"$WANip\",\"ttl\":$CFttl,\"proxied\":false}"
+
+			# === 提交域名解析记录 ===
+			:if ($recordId != "") do={
+				:set updateUrl "https://api.cloudflare.com/client/v4/zones/$CFzoneid/dns_records/$recordId"
+				:set httpMethod "put"
+				:if ($Debug) do={
+					:log info "[DEBUG] 正在更新记录: $updateUrl"
+					:log info "[DEBUG] 提交数据: $postData"
+				}
+			} else={
+				# 创建新记录
+				:set updateUrl "https://api.cloudflare.com/client/v4/zones/$CFzoneid/dns_records"
+				:set httpMethod "post"
+				:if ($Debug) do={
+					:log info "[DEBUG] 未找到记录，正在创建新记录: $CFdomain"
+					:log info "[DEBUG] 提交数据: $postData"
+				}
+			}
+			:set result [/tool fetch http-method=$httpMethod mode=https url=$updateUrl \
+				http-header-field=("$authHeader,Content-Type: application/json") \
+				http-data=$postData as-value output=user]
+			:set response ($result->"data")
+			# 检查是否成功
+			:if ([:find $response "\"success\":true"] > 0) do={
+				:log info "[DDNS] 已更新 $CFdomain：$recordIP → $WANip"
+
+				# 缓存提交成功的 IP 记录
+				:if ($recordType = "A") do={
+					:set previousIPv4 $WANip
+				} else={
+					:set previousIPv6 $WANip
+				}
+			} else={
+				:log warning "[DDNS] 更新失败，未更新缓存。响应: $updateResp"
+				:set allRecordsUpdated false
+			}
+		} else={
+			:log info "[DDNS] $CFdomain 的 IP 与记录一致，无需更新。"
+		}
+
+	} else={
+		:if ($WANip = "") do={
+			:log warning "[DDNS] $CFdomain 无法获取 IP，跳过。"
+			:set allRecordsUpdated false
+		} else={
+			:log info "[DDNS] $CFdomain 与缓存的 IP 一致，跳过更新。"
+			:set allRecordsUpdated false
+		}
+	}
+}
+
+:if ($allRecordsUpdated) do={
+	:set lastUpdateTime $totalSeconds
+	:if ($Debug) do={ :log info "[DEBUG] 全部记录成功，更新时间戳为 $lastUpdateTime" }
+} else={
+	:log warning "[DDNS] 部分记录更新失败或已跳过，将在下次运行时重试。"
+}
