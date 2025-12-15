@@ -1,6 +1,6 @@
 # ==============================
 # MikroTik QoS 终极版 RouterOS 7
-# DSCP 版
+# DSCP 版 (RouterOS 7 正确写法)
 # WAN: pppoe-out1
 # LAN: bridge
 # 下行: 480M
@@ -20,24 +20,24 @@ add name=pcq-up kind=pcq pcq-classifier=src-address pcq-rate=0
 # 3. IPv4 DSCP 标记
 /ip firewall mangle
 # DNS / ACK EF
-add chain=prerouting protocol=udp dst-port=53 action=mark-dscp new-dscp=46 passthrough=yes
+add chain=prerouting protocol=udp dst-port=53 action=set-dscp new-dscp=46 passthrough=yes
 # 游戏 UDP AF41
-add chain=prerouting protocol=udp action=mark-dscp new-dscp=34 passthrough=yes
+add chain=prerouting protocol=udp action=set-dscp new-dscp=34 passthrough=yes
 # 视频 TCP AF21
-add chain=prerouting protocol=tcp dst-port=443 action=mark-dscp new-dscp=18 passthrough=yes
+add chain=prerouting protocol=tcp dst-port=443 action=set-dscp new-dscp=18 passthrough=yes
 # 网页 TCP AF11
-add chain=prerouting protocol=tcp dst-port=80,443 action=mark-dscp new-dscp=8 passthrough=yes
+add chain=prerouting protocol=tcp dst-port=80,443 action=set-dscp new-dscp=8 passthrough=yes
 # 下载 TCP BE
-add chain=prerouting protocol=tcp dst-port=6881-6999 action=mark-dscp new-dscp=0 passthrough=yes
+add chain=prerouting protocol=tcp dst-port=6881-6999 action=set-dscp new-dscp=0 passthrough=yes
 
 # 4. IPv6 DSCP 标记
 /ipv6 firewall mangle
 # DNS EF
-add chain=prerouting protocol=udp dst-port=53 action=mark-dscp new-dscp=46 passthrough=yes
+add chain=prerouting protocol=udp dst-port=53 action=set-dscp new-dscp=46 passthrough=yes
 # 游戏 / 实时 UDP AF41
-add chain=prerouting protocol=udp action=mark-dscp new-dscp=34 passthrough=yes
-# 普通 TCP AF11
-add chain=prerouting protocol=tcp action=mark-dscp new-dscp=8 passthrough=yes
+add chain=prerouting protocol=udp action=set-dscp new-dscp=34 passthrough=yes
+# 普通 TCP AF11 (网页/视频/下载)
+add chain=prerouting protocol=tcp action=set-dscp new-dscp=8 passthrough=yes
 
 # 5. 下行 Queue Tree (480M)
 /queue tree
