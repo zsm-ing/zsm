@@ -11,7 +11,7 @@ SCRIPT_DIR="/etc/sing-box/scripts"
 TEMP_DIR="/tmp/sing-box"
 
 # 脚本的URL基础路径
-BASE_URL="https://raw.githubusercontent.com/zming66/zsm/refs/heads/main/openwrt"
+BASE_URL="https://raw.githubusercontent.com/zsm-ing/zsm/refs/heads/main/openwrt"
 
 # 初始下载菜单脚本的URL
 MENU_SCRIPT_URL="$BASE_URL/menu.sh"
