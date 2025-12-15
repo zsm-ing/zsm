@@ -1,0 +1,81 @@
+{
+    "control":[
+        { "VTOY_SHOW_PASSWORD_ASTERISK": "0" },
+        { "VTOY_MENU_TIMEOUT": "10" },
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "control_legacy":[
+        { "VTOY_MENU_TIMEOUT": "10" },
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "control_uefi":[
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "control_ia32":[
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "control_aa64":[
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "control_mips":[
+        { "VTOY_MENU_LANGUAGE": "zh_CN" },
+        { "VTOY_DEFAULT_SEARCH_ROOT": "/PE" },
+        { "VTOY_DEFAULT_IMAGE": "/PE/FirPE.iso" }
+    ],
+    "theme":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "theme_legacy":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "theme_uefi":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "theme_ia32":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "theme_aa64":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "theme_mips":{
+        "file": "/ventoy/theme/theme.txt",
+        "gfxmode": "1920x1080"
+    },
+    "menu_alias":[
+        {
+            "image": "/PE/360PE.iso",
+            "alias": "360PE"
+        },
+        {
+            "image": "/PE/EasyU.iso",
+            "alias": "EasyU"
+        },
+        {
+            "image": "/PE/Edgeless.iso",
+            "alias": "Edgeless"
+        },
+        {
+            "image": "/PE/FirPE.iso",
+            "alias": "FirPE"
+        },
+        {
+            "image": "/PE/WePE.iso",
+            "alias": "WePE"
+        }
+    ]
+}
