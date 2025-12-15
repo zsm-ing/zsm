@@ -22,7 +22,7 @@ if ! grep -qi 'openwrt' /etc/os-release; then
 fi
 
 # 脚本的URL基础路径
-BASE_URL="https://raw.githubusercontent.com/zming66/zsm/refs/heads/main/openwrt"
+BASE_URL="https://raw.githubusercontent.com/zsm-ing/zsm/refs/heads/main/openwrt"
                                
 # 脚本列表
 SCRIPTS=(
