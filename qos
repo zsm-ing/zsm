@@ -1,0 +1,66 @@
+# ==============================
+# MikroTik QoS 终极版 RouterOS 7
+# WAN: pppoe-out1
+# LAN: bridge
+# 下行: 500M (限480M)
+# 上行: 50M (限45M)
+# IPv4 五类 + IPv6 三类
+# ==============================
+
+# 1. 关闭 FastTrack
+/ip firewall filter
+disable [find action=fasttrack-connection]
+
+# 2. 定义 PCQ 队列类型
+/queue type
+add name=pcq-down kind=pcq pcq-classifier=dst-address pcq-rate=0
+add name=pcq-up kind=pcq pcq-classifier=src-address pcq-rate=0
+
+# 3. IPv4 流量分类
+/ip firewall mangle
+# DNS
+add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=no
+# 游戏 UDP（可根据游戏端口精确化）
+add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=no
+# 视频 TCP (流媒体)
+add chain=prerouting protocol=tcp dst-port=443 action=mark-packet new-packet-mark=video passthrough=no
+# 网页 TCP
+add chain=prerouting protocol=tcp dst-port=80,443 action=mark-packet new-packet-mark=web passthrough=no
+# 下载 TCP (BT/大流量)
+add chain=prerouting protocol=tcp dst-port=6881-6999 action=mark-packet new-packet-mark=download passthrough=no
+
+# 4. IPv6 流量分类
+/ipv6 firewall mangle
+# DNS
+add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=no
+# 游戏 / UDP 实时
+add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=no
+# TCP 普通
+add chain=prerouting protocol=tcp action=mark-packet new-packet-mark=web passthrough=no
+
+# 5. 下行 Queue Tree (480M)
+/queue tree
+add name=DOWN parent=pppoe-out1 max-limit=480M
+add name=DNS-DOWN parent=DOWN packet-mark=dns priority=1 queue=pcq-down limit-at=5M max-limit=20M
+add name=GAME-DOWN parent=DOWN packet-mark=game priority=2 queue=pcq-down limit-at=50M max-limit=200M
+add name=VIDEO-DOWN parent=DOWN packet-mark=video priority=4 queue=pcq-down limit-at=100M max-limit=300M
+add name=WEB-DOWN parent=DOWN packet-mark=web priority=5 queue=pcq-down limit-at=50M max-limit=200M
+add name=DL-DOWN parent=DOWN packet-mark=download priority=8 queue=pcq-down limit-at=10M max-limit=150M
+
+# 6. 上行 Queue Tree (45M)
+/queue tree
+add name=UP parent=pppoe-out1 max-limit=45M
+add name=DNS-UP parent=UP packet-mark=dns priority=1 queue=pcq-up limit-at=2M max-limit=5M
+add name=GAME-UP parent=UP packet-mark=game priority=2 queue=pcq-up limit-at=10M max-limit=25M
+add name=WEB-UP parent=UP packet-mark=web priority=5 queue=pcq-up limit-at=5M max-limit=15M
+add name=DL-UP parent=UP packet-mark=download priority=8 queue=pcq-up limit-at=2M max-limit=10M
+
+# 7. 全局队列类型说明
+# pcq-down/up: 自动按设备均分
+# priority: 值越小优先级越高
+# limit-at: 保底带宽
+# max-limit: 最大带宽
+
+# ==============================
+# 配置完成
+# ==============================
