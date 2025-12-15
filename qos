@@ -1,69 +1,62 @@
-# ==============================
-# MikroTik QoS 终极版 RouterOS 7
-# DSCP 版（正确写法）
+# === RouterOS 7 QoS w/ DSCP + Queue Tree ===
 # WAN: pppoe-out1
 # LAN: bridge
-# 下行: 480M
-# 上行: 45M
-# IPv4 五类 + IPv6 三类
-# 使用 packet-mark + queue tree set-dscp
-# ==============================
+# Down: 480M / Up: 45M
 
-# 1. 关闭 FastTrack
+# 1) 阻止 FastTrack
 /ip firewall filter
 disable [find action=fasttrack-connection]
 
-# 2. 定义 PCQ 队列类型
+# 2) PCQ 类型
 /queue type
 add name=pcq-down kind=pcq pcq-classifier=dst-address pcq-rate=0
 add name=pcq-up kind=pcq pcq-classifier=src-address pcq-rate=0
 
-# 3. IPv4 流量标记 (packet-mark)
+# 3) IPv4 DSCP 标记 + Packet Mark
 /ip firewall mangle
-# DNS
+# DNS EF
+add chain=prerouting protocol=udp dst-port=53 action=change-dscp new-dscp=46 passthrough=yes
 add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=yes
-# 游戏 UDP
+# 游戏 UDP AF41
+add chain=prerouting protocol=udp action=change-dscp new-dscp=34 passthrough=yes
 add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=yes
-# 视频 TCP
+# TCP 视频 AF21
+add chain=prerouting protocol=tcp dst-port=443 action=change-dscp new-dscp=18 passthrough=yes
 add chain=prerouting protocol=tcp dst-port=443 action=mark-packet new-packet-mark=video passthrough=yes
-# 网页 TCP
+# 网页 TCP AF11
+add chain=prerouting protocol=tcp dst-port=80,443 action=change-dscp new-dscp=8 passthrough=yes
 add chain=prerouting protocol=tcp dst-port=80,443 action=mark-packet new-packet-mark=web passthrough=yes
-# 下载 TCP
+# 下载 TCP BE
+add chain=prerouting protocol=tcp dst-port=6881-6999 action=change-dscp new-dscp=0 passthrough=yes
 add chain=prerouting protocol=tcp dst-port=6881-6999 action=mark-packet new-packet-mark=download passthrough=yes
 
-# 4. IPv6 流量标记 (packet-mark)
+# 4) IPv6 DSCP + Packet Mark
 /ipv6 firewall mangle
 # DNS
+add chain=prerouting protocol=udp dst-port=53 action=change-dscp new-dscp=46 passthrough=yes
 add chain=prerouting protocol=udp dst-port=53 action=mark-packet new-packet-mark=dns passthrough=yes
-# 游戏 / 实时 UDP
+# UDP 实时 (游戏/QUIC)
+add chain=prerouting protocol=udp action=change-dscp new-dscp=34 passthrough=yes
 add chain=prerouting protocol=udp action=mark-packet new-packet-mark=game passthrough=yes
-# 普通 TCP (网页/视频/下载)
+# 普通 TCP
+add chain=prerouting protocol=tcp action=change-dscp new-dscp=8 passthrough=yes
 add chain=prerouting protocol=tcp action=mark-packet new-packet-mark=web passthrough=yes
 
-# 5. 下行 Queue Tree (480M) + DSCP
+# 5) Downlink Queue Tree (480M)
 /queue tree
 add name=DOWN parent=pppoe-out1 max-limit=480M
-add name=DNS-DOWN parent=DOWN packet-mark=dns queue=pcq-down limit-at=5M max-limit=20M set-dscp=46 priority=1
-add name=GAME-DOWN parent=DOWN packet-mark=game queue=pcq-down limit-at=50M max-limit=200M set-dscp=34 priority=2
-add name=VIDEO-DOWN parent=DOWN packet-mark=video queue=pcq-down limit-at=100M max-limit=300M set-dscp=18 priority=4
-add name=WEB-DOWN parent=DOWN packet-mark=web queue=pcq-down limit-at=50M max-limit=200M set-dscp=8 priority=5
-add name=DL-DOWN parent=DOWN packet-mark=download queue=pcq-down limit-at=10M max-limit=150M set-dscp=0 priority=8
+add name=DNS-DOWN parent=DOWN packet-mark=dns queue=pcq-down limit-at=5M max-limit=20M priority=1
+add name=GAME-DOWN parent=DOWN packet-mark=game queue=pcq-down limit-at=50M max-limit=200M priority=2
+add name=VIDEO-DOWN parent=DOWN packet-mark=video queue=pcq-down limit-at=100M max-limit=300M priority=4
+add name=WEB-DOWN parent=DOWN packet-mark=web queue=pcq-down limit-at=50M max-limit=200M priority=5
+add name=DL-DOWN parent=DOWN packet-mark=download queue=pcq-down limit-at=10M max-limit=150M priority=8
 
-# 6. 上行 Queue Tree (45M) + DSCP
+# 6) Uplink Queue Tree (45M)
 /queue tree
 add name=UP parent=pppoe-out1 max-limit=45M
-add name=DNS-UP parent=UP packet-mark=dns queue=pcq-up limit-at=2M max-limit=5M set-dscp=46 priority=1
-add name=GAME-UP parent=UP packet-mark=game queue=pcq-up limit-at=10M max-limit=25M set-dscp=34 priority=2
-add name=WEB-UP parent=UP packet-mark=web queue=pcq-up limit-at=5M max-limit=15M set-dscp=8 priority=5
-add name=DL-UP parent=UP packet-mark=download queue=pcq-up limit-at=2M max-limit=10M set-dscp=0 priority=8
+add name=DNS-UP parent=UP packet-mark=dns queue=pcq-up limit-at=2M max-limit=5M priority=1
+add name=GAME-UP parent=UP packet-mark=game queue=pcq-up limit-at=10M max-limit=25M priority=2
+add name=WEB-UP parent=UP packet-mark=web queue=pcq-up limit-at=5M max-limit=15M priority=5
+add name=DL-UP parent=UP packet-mark=download queue=pcq-up limit-at=2M max-limit=10M priority=8
 
-# 7. 配置说明
-# - DSCP 优先级: DNS(EF46) > 游戏(AF41) > 视频(AF21) > 网页(AF11) > 下载(BE0)
-# - Queue Tree + packet-mark + set-dscp 实现标准化优先级
-# - PCQ 自动均分多设备带宽
-# - IPv4 & IPv6 同步生效
-# - RouterOS 7 完全可导入，语法无错误
-
-# ==============================
-# 配置完成
-# ==============================
+# === END ===
