@@ -72,14 +72,14 @@ install_version() {
 
     echo -e "${CYAN}固定架构: $ARCH${NC}"
 
-    # 遍历 assets 查找匹配的 linux-amd64.tar.gz 文件（严格匹配，不包含 -glibc）
+    # 遍历 assets 查找匹配的 linux-amd64-musl.tar.gz 文件
     bin_url=""
     mapfile -t assets < <(echo "$releases" | jq -r '.[] | .assets[] | "\(.name) \(.browser_download_url)"')
 
     for item in "${assets[@]}"; do
         name=$(echo "$item" | awk '{print $1}')
         url=$(echo "$item" | awk '{print $2}')
-        if echo "$name" | grep -q "$ver" && echo "$name" | grep -q "$OS-$ARCH" && echo "$name" | grep -q 'linux-amd64\.tar\.gz$'; then
+        if echo "$name" | grep -q "$ver" && echo "$name" | grep -q "$OS-$ARCH" && echo "$name" | grep -q 'linux-amd64-musl\.tar\.gz$'; then
             bin_url="$url"
             break
         fi
