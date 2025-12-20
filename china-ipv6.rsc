@@ -1,6 +1,6 @@
 ################################################################
-# 中国IPv6地址列表 - 自动生成 (2025-12-15)
-# 来源: APNIC | 条目数: 2041
+# 中国IPv6地址列表 - 自动生成 (2025-12-20)
+# 来源: APNIC | 条目数: 2039
 ################################################################
 /ipv6 firewall address-list remove [find where list="CN"]
 /ipv6 firewall address-list
@@ -74,7 +74,6 @@ add address=2001:df4:3d80::/48 list=CN
 add address=2001:df4:4b80::/48 list=CN
 add address=2001:df4:4d80::/48 list=CN
 add address=2001:df4:a1c0::/48 list=CN
-add address=2001:df4:a980::/48 list=CN
 add address=2001:df4:c180::/48 list=CN
 add address=2001:df4:c580::/48 list=CN
 add address=2001:df4:e140::/48 list=CN
@@ -735,6 +734,7 @@ add address=2402:3de0::/32 list=CN
 add address=2402:3e00::/32 list=CN
 add address=2402:3ec0::/32 list=CN
 add address=2402:3f80::/32 list=CN
+add address=2402:4060::/32 list=CN
 add address=2402:4140::/32 list=CN
 add address=2402:42c0::/32 list=CN
 add address=2402:4340::/32 list=CN
@@ -1064,7 +1064,6 @@ add address=2403:7540::/32 list=CN
 add address=2403:7580::/32 list=CN
 add address=2403:76c0::/32 list=CN
 add address=2403:7700::/32 list=CN
-add address=2403:7840::/32 list=CN
 add address=2403:78c0::/32 list=CN
 add address=2403:7a80::/32 list=CN
 add address=2403:7b00::/32 list=CN
@@ -1795,7 +1794,6 @@ add address=2406:bb80::/32 list=CN
 add address=2406:bc80::/32 list=CN
 add address=2406:bd40::/32 list=CN
 add address=2406:bd80::/32 list=CN
-add address=2406:bdc0::/32 list=CN
 add address=2406:be80::/32 list=CN
 add address=2406:bf80::/32 list=CN
 add address=2406:c080::/32 list=CN
