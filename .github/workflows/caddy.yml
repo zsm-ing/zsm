@@ -1,51 +1,66 @@
-name: Build & Release Alpine Caddy
+name: Sync Caddy Official Version (with local record)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  schedule:
+    - cron: '0 */6 * * *'   # 每 6 小时检查一次
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  sync:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          fetch-depth: 0
 
-      - name: Set version
-        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-
-      - name: Build static Caddy (Alpine)
+      - name: Read local version
+        id: local
         run: |
-          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          if [ -f .caddy-version ]; then
+            echo "version=$(cat .caddy-version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=v0.0.0" >> $GITHUB_OUTPUT
+          fi
 
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-          xcaddy build \
-            --with github.com/mholt/caddy-l4 \
-            --with github.com/caddy-dns/cloudflare \
-            --output caddy-alpine-amd64-$VERSION
-
-      - name: Verify binary
+      - name: Get official Caddy version
+        id: official
         run: |
-          file caddy-alpine-amd64-$VERSION
-          ldd caddy-alpine-amd64-$VERSION || true
+          OFFICIAL=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
+          echo "version=$OFFICIAL" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Release ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: caddy-alpine-amd64-$VERSION
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.local.outputs.version }}" = "${{ steps.official.outputs.version }}" ]; then
+            echo "update=false" >> $GITHUB_OUTPUT
+          else
+            echo "update=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update local record & tag
+        if: steps.compare.outputs.update == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          set -e
+
+          NEW_VERSION="${{ steps.official.outputs.version }}"
+
+          echo "Updating to $NEW_VERSION"
+
+          echo "$NEW_VERSION" > .caddy-version
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .caddy-version
+          git commit -m "chore: sync Caddy version $NEW_VERSION"
+          git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} HEAD:main
+
+          git tag "$NEW_VERSION"
+          git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} "$NEW_VERSION"
