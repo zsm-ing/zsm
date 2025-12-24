@@ -1,10 +1,13 @@
-name: Build Alpine Caddy (layer4 + cloudflare)
+name: Build & Release Alpine Caddy
 
 on:
   workflow_dispatch:
   push:
     tags:
       - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -19,7 +22,11 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Build static Caddy (musl compatible)
+      - name: Set version
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
+      - name: Build static Caddy (Alpine / musl)
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
@@ -29,11 +36,21 @@ jobs:
           xcaddy build \
             --with github.com/mholt/caddy-l4 \
             --with github.com/caddy-dns/cloudflare \
-            --output caddy-alpine-amd64
+            --output caddy-alpine-amd64-${VERSION}
 
       - name: Verify binary
         run: |
-          file caddy-alpine-amd64
+          file caddy-alpine-amd64-${VERSION}
+          ldd caddy-alpine-amd64-${VERSION} || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            caddy-alpine-amd64-${{ env.VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ldd caddy-alpine-amd64 || true
 
       - name: Upload artifact
