@@ -3,7 +3,7 @@ name: Build & Release Alpine Caddy
 on:
   push:
     tags:
-      - 'v1.0.0'
+      - 'v*'
   workflow_dispatch:
 
 permissions:
