@@ -1,0 +1,43 @@
+name: Build Alpine Caddy (layer4 + cloudflare)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build static Caddy (musl compatible)
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+          CGO_ENABLED=0 \
+          GOOS=linux \
+          GOARCH=amd64 \
+          xcaddy build \
+            --with github.com/mholt/caddy-l4 \
+            --with github.com/caddy-dns/cloudflare \
+            --output caddy-alpine-amd64
+
+      - name: Verify binary
+        run: |
+          file caddy-alpine-amd64
+          ldd caddy-alpine-amd64 || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-alpine-amd64
+          path: caddy-alpine-amd64
