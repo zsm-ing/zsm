@@ -1,8 +1,8 @@
-name: Sync Caddy Official Version (with local record)
+name: Sync caddy-version with official Caddy
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # 每 6 小时检查一次
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -18,31 +18,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read local version
+      - name: Read local caddy-version
         id: local
         run: |
-          if [ -f .caddy-version ]; then
-            echo "version=$(cat .caddy-version)" >> $GITHUB_OUTPUT
+          if [ -f caddy-version ]; then
+            echo "version=$(cat caddy-version)" >> $GITHUB_OUTPUT
           else
             echo "version=v0.0.0" >> $GITHUB_OUTPUT
           fi
 
       - name: Get official Caddy version
         id: official
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          OFFICIAL=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
+          OFFICIAL=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/caddyserver/caddy/releases/latest \
+            | grep '"tag_name"' \
+            | head -n1 \
+            | cut -d '"' -f4)
+
+          echo "Official version: $OFFICIAL"
+
+          if [ -z "$OFFICIAL" ]; then
+            echo "Failed to fetch official version"
+            exit 1
+          fi
+
           echo "version=$OFFICIAL" >> $GITHUB_OUTPUT
 
       - name: Compare versions
         id: compare
         run: |
+          echo "Local:    ${{ steps.local.outputs.version }}"
+          echo "Official: ${{ steps.official.outputs.version }}"
+
           if [ "${{ steps.local.outputs.version }}" = "${{ steps.official.outputs.version }}" ]; then
             echo "update=false" >> $GITHUB_OUTPUT
           else
             echo "update=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Update local record & tag
+      - name: Update caddy-version and push
         if: steps.compare.outputs.update == 'true'
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -51,16 +69,11 @@ jobs:
 
           NEW_VERSION="${{ steps.official.outputs.version }}"
 
-          echo "Updating to $NEW_VERSION"
-
-          echo "$NEW_VERSION" > .caddy-version
+          echo "$NEW_VERSION" > caddy-version
 
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add .caddy-version
-          git commit -m "chore: sync Caddy version $NEW_VERSION"
+          git add caddy-version
+          git commit -m "chore: sync caddy to $NEW_VERSION"
           git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} HEAD:main
-
-          git tag "$NEW_VERSION"
-          git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} "$NEW_VERSION"
