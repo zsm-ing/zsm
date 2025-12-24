@@ -26,7 +26,7 @@ jobs:
         run: |
           echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
 
-      - name: Build static Caddy (Alpine / musl)
+      - name: Build static Caddy
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
@@ -34,6 +34,22 @@ jobs:
           GOOS=linux \
           GOARCH=amd64 \
           xcaddy build \
+            --with github.com/mholt/caddy-l4 \
+            --with github.com/caddy-dns/cloudflare \
+            --output caddy-alpine-amd64-$VERSION
+
+      - name: Verify binary
+        run: |
+          file caddy-alpine-amd64-$VERSION
+          ldd caddy-alpine-amd64-$VERSION || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: caddy-alpine-amd64-$VERSION
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             --with github.com/mholt/caddy-l4 \
             --with github.com/caddy-dns/cloudflare \
             --output caddy-alpine-amd64-${VERSION}
