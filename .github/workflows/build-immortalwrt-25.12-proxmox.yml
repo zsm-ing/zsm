@@ -1,0 +1,98 @@
+name: Build ImmortalWRT 25.12 x86_64 for Proxmox LXC
+
+on:
+  workflow_dispatch:
+    inputs:
+      use-local-config:
+        description: '是否使用仓库里的 .config (yes/no)'
+        required: true
+        default: 'yes'
+
+jobs:
+  build:
+    name: Compile & Package rootfs
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone ImmortalWRT 25.12 branch
+        run: |
+          git clone https://github.com/immortalwrt/immortalwrt.git immortal-src
+          cd immortal-src
+          git fetch --depth=1 origin refs/heads/25.12-SNAPSHOT
+          git checkout 25.12-SNAPSHOT
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential git-core libncurses5-dev zlib1g-dev \
+            gawk flex gettext libssl-dev wget unzip python3-distutils ccache
+
+      - name: Copy local .config
+        if: ${{ github.event.inputs.use-local-config == 'yes' }}
+        run: |
+          cp .config immortal-src/.config
+
+      - name: Update feeds
+        run: |
+          cd immortal-src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Default config if no local .config
+        if: ${{ github.event.inputs.use-local-config == 'no' }}
+        run: |
+          cd immortal-src
+          make defconfig
+
+      - name: Compile firmware
+        run: |
+          cd immortal-src
+          make -j$(nproc) V=s
+
+      - name: Extract & package rootfs for Proxmox LXC
+        run: |
+          cd immortal-src/bin/targets/x86/64
+
+          # 找到 ext4 rootfs 镜像文件 
+          ROOTIMG=$(ls *-ext4-rootfs.img | head -n1)
+
+          # 准备临时挂载点和工作目录
+          sudo mkdir mnt rootfs-workdir
+
+          # 挂载 ext4 镜像
+          sudo mount -o loop $ROOTIMG mnt
+
+          # 拷贝 rootfs 到工作目录
+          sudo cp -a mnt/. rootfs-workdir/
+
+          # 卸载
+          sudo umount mnt
+          sudo rmdir mnt
+
+          # 打包成适合 Proxmox LXC 的 tar.gz
+          sudo tar -C rootfs-workdir -czf openwrt-x86-64-rootfs.tar.gz .
+
+          # 移到上一级目录
+          mv openwrt-x86-64-rootfs.tar.gz ../../../
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: immortalwrt25.12-x86-firmware
+          path: |
+            immortal-src/bin/targets/x86/64/*.img
+            immortal-src/bin/targets/x86/64/*.gz
+            immortal-src/bin/targets/x86/64/packages
+
+      - name: Upload rootfs template
+        uses: actions/upload-artifact@v3
+        with:
+          name: openwrt-proxmox-rootfs
+          path: |
+            openwrt-x86-64-rootfs.tar.gz
