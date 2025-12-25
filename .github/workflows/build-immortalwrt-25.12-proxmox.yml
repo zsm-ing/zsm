@@ -149,50 +149,99 @@ jobs:
         cd "$IMMORTAL_DIR"
         export FORCE_UNSAFE_CONFIGURE=1
         
+        echo "开始编译固件..."
         if [ "${{ github.event.inputs.enable-ccache }}" == "yes" ]; then
           make -j$JOBS V=s 2>&1 | tee build.log || make V=sc 2>&1 | tee -a build.log
         else
           make -j$JOBS V=s 2>&1 | tee build.log
         fi
         
-        if [ -f "bin/targets/x86/64/config.buildinfo" ]; then
-          echo "编译成功"
+        echo "编译完成，检查生成的文件..."
+        ls -la bin/targets/x86/64/
+        
+        if ls bin/targets/x86/64/*.img 2>/dev/null; then
+          echo "✅ 编译成功"
           cp build.log "$GITHUB_WORKSPACE/build.log"
         else
-          echo "编译失败"
+          echo "❌ 编译失败，未找到固件镜像"
           exit 1
         fi
 
     - name: Generate Proxmox template
       run: |
+        echo "进入编译输出目录..."
         cd "$IMMORTAL_DIR/bin/targets/x86/64"
         
-        ROOT_IMG=$(find . -name "*-ext4-rootfs.img" -o -name "*-rootfs.img" | head -1)
+        echo "列出所有文件:"
+        ls -la
         
-        if [ -z "$ROOT_IMG" ]; then
-          echo "未找到根文件系统镜像"
-          exit 1
+        echo "寻找根文件系统镜像..."
+        # 尝试多种可能的文件名模式
+        if ls *-ext4-rootfs.img* 2>/dev/null; then
+          ROOT_IMG=$(ls *-ext4-rootfs.img* | head -1)
+          echo "找到镜像: $ROOT_IMG"
+        elif ls *-combined-ext4.img* 2>/dev/null; then
+          ROOT_IMG=$(ls *-combined-ext4.img* | head -1)
+          echo "找到镜像: $ROOT_IMG"
+        elif ls *-rootfs.img* 2>/dev/null; then
+          ROOT_IMG=$(ls *-rootfs.img* | head -1)
+          echo "找到镜像: $ROOT_IMG"
+        else
+          echo "未找到根文件系统镜像，尝试列出所有img文件..."
+          ls *.img* 2>/dev/null || echo "没有找到任何img文件"
+          echo "尝试使用磁盘镜像..."
+          # 尝试使用磁盘镜像（通常包含根文件系统分区）
+          DISK_IMG=$(ls *-combined.img* | head -1)
+          if [ -n "$DISK_IMG" ]; then
+            echo "使用磁盘镜像: $DISK_IMG"
+            ROOT_IMG="$DISK_IMG"
+          else
+            echo "❌ 未找到任何可用的镜像文件"
+            exit 1
+          fi
         fi
         
-        TEMP_DIR=$(mktemp -d)
-        MOUNT_DIR="$TEMP_DIR/mnt"
-        ROOTFS_DIR="$TEMP_DIR/rootfs"
+        # 检查镜像是否压缩
+        if [[ "$ROOT_IMG" == *.gz ]]; then
+          echo "镜像被压缩，正在解压..."
+          gunzip "$ROOT_IMG"
+          ROOT_IMG="${ROOT_IMG%.gz}"
+        fi
         
-        mkdir -p "$MOUNT_DIR" "$ROOTFS_DIR"
-        
-        sudo mount -o loop,ro "$ROOT_IMG" "$MOUNT_DIR"
-        sudo rsync -a "$MOUNT_DIR"/ "$ROOTFS_DIR"/
-        sudo umount "$MOUNT_DIR"
-        
-        sudo rm -rf "$ROOTFS_DIR"/tmp/*
-        sudo rm -rf "$ROOTFS_DIR"/var/log/*
-        
-        cd "$ROOTFS_DIR"
-        sudo tar --numeric-owner --xattrs -c . | gzip -9 > "$GITHUB_WORKSPACE/openwrt-x86-64-rootfs.tar.gz"
-        
-        sudo rm -rf "$TEMP_DIR"
-        
-        echo "模板生成完成: $(du -h $GITHUB_WORKSPACE/openwrt-x86-64-rootfs.tar.gz | cut -f1)"
+        if [[ "$ROOT_IMG" == *.img ]]; then
+          echo "开始生成Proxmox模板..."
+          
+          TEMP_DIR=$(mktemp -d)
+          MOUNT_DIR="$TEMP_DIR/mnt"
+          ROOTFS_DIR="$TEMP_DIR/rootfs"
+          
+          mkdir -p "$MOUNT_DIR" "$ROOTFS_DIR"
+          
+          echo "挂载镜像: $ROOT_IMG"
+          sudo mount -o loop,ro "$ROOT_IMG" "$MOUNT_DIR"
+          
+          echo "复制文件系统..."
+          sudo rsync -a "$MOUNT_DIR"/ "$ROOTFS_DIR"/
+          
+          echo "卸载镜像..."
+          sudo umount "$MOUNT_DIR"
+          
+          echo "清理临时文件..."
+          sudo rm -rf "$ROOTFS_DIR"/tmp/*
+          sudo rm -rf "$ROOTFS_DIR"/var/log/*
+          
+          echo "打包根文件系统..."
+          cd "$ROOTFS_DIR"
+          sudo tar --numeric-owner --xattrs -c . | gzip -9 > "$GITHUB_WORKSPACE/openwrt-x86-64-rootfs.tar.gz"
+          
+          echo "清理临时目录..."
+          sudo rm -rf "$TEMP_DIR"
+          
+          echo "模板生成完成: $(du -h $GITHUB_WORKSPACE/openwrt-x86-64-rootfs.tar.gz | cut -f1)"
+        else
+          echo "❌ 文件不是img格式: $ROOT_IMG"
+          exit 1
+        fi
 
     - name: Create build info
       run: |
