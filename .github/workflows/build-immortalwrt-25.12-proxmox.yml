@@ -1,4 +1,4 @@
-name: Build ImmortalWRT 25.12 x86_64 for Proxmox LXC
+name: Build ImmortalWRT x86_64 with Disk Cleanup
 
 on:
   workflow_dispatch:
@@ -10,72 +10,120 @@ on:
 
 jobs:
   build:
-    name: Compile & Package rootfs
-    runs-on: ubuntu-latest
-    timeout-minutes: 480
+    runs-on: ubuntu‑22.04
+    timeout-minutes: 720
 
     steps:
-      - name: Checkout this repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Clone ImmortalWRT openwrt-25.12 branch
-        run: |
-          git clone --single-branch --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git immortal-src
+    # ——————————————————————————————
+    # 大空间清理步骤（必须放在第一位）
+    # ——————————————————————————————
+    - name: Free up space on runner
+      uses: jlumbroso/free-disk-space@main
+      with:
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
 
-      - name: Install build dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y build-essential git-core libncurses5-dev zlib1g-dev \
-            gawk flex gettext libssl-dev wget unzip python3-setuptools ccache squashfs-tools
-            
-      - name: Copy local .config
-        if: ${{ github.event.inputs.use-local-config == 'yes' }}
-        run: |
-          cp "$GITHUB_WORKSPACE/.config" immortal-src/.config
-      
-      - name: Update feeds
-        run: |
-          cd immortal-src
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+    - name: Show free disk before build
+      run: df -h
 
-      - name: Default config if no local .config
-        if: ${{ github.event.inputs.use-local-config == 'no' }}
-        run: |
-          cd immortal-src
-          make defconfig
+    # ——————————————————————————————
+    # 拉取仓库代码
+    # ——————————————————————————————
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Compile firmware
-        run: |
-          cd immortal-src
-          make -j$(nproc) V=s
+    # ——————————————————————————————
+    # Clone ImmortalWRT 源码
+    # ——————————————————————————————
+    - name: Clone ImmortalWRT openwrt-25.12
+      run: |
+        git clone --single-branch --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git immortal-src
 
-      - name: Generate rootfs.tar.gz for Proxmox LXC
-        run: |
-          cd immortal-src/bin/targets/x86/64
-          ROOTIMG=$(ls *-ext4-rootfs.img | head -n1)
-          sudo mkdir mnt rootfs-workdir
-          sudo mount -o loop $ROOTIMG mnt
-          sudo cp -a mnt/. rootfs-workdir/
-          sudo umount mnt
-          sudo rm -rf mnt
-          sudo tar -C rootfs-workdir -czf openwrt-x86-64-rootfs.tar.gz .
-          mv openwrt-x86-64-rootfs.tar.gz ../../../
+    # ——————————————————————————————
+    # 安装依赖
+    # ——————————————————————————————
+    - name: Install build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential git-core libncurses5-dev zlib1g-dev \
+          gawk flex gettext libssl-dev wget unzip python3-setuptools ccache squashfs-tools
 
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: immortalwrt25.12-x86-firmware
-          path: |
-            immortal-src/bin/targets/x86/64/*.img
-            immortal-src/bin/targets/x86/64/*.gz
-            immortal-src/bin/targets/x86/64/packages
+    # ——————————————————————————————
+    # 拷贝本地 .config
+    # ——————————————————————————————
+    - name: Copy local .config
+      if: ${{ github.event.inputs.use-local-config == 'yes' }}
+      run: |
+        cp "$GITHUB_WORKSPACE/.config" immortal-src/.config
 
-      - name: Upload rootfs template
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-proxmox-rootfs
-          path: |
-            openwrt-x86-64-rootfs.tar.gz
+    # ——————————————————————————————
+    # 更新 feeds
+    # ——————————————————————————————
+    - name: Update and install feeds
+      run: |
+        cd immortal-src
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    # ——————————————————————————————
+    # 如果没有 .config 则默认
+    # ——————————————————————————————
+    - name: Default config if no local .config
+      if: ${{ github.event.inputs.use-local-config == 'no' }}
+      run: |
+        cd immortal-src
+        make defconfig
+
+    # ——————————————————————————————
+    # 实际编译
+    # ——————————————————————————————
+    - name: Compile ImmortalWRT
+      run: |
+        cd immortal-src
+        make -j$(nproc) V=s
+
+    # ——————————————————————————————
+    # 生成 Proxmox LXC rootfs.tar.gz
+    # ——————————————————————————————
+    - name: Generate rootfs.tar.gz for Proxmox LXC
+      run: |
+        cd immortal-src/bin/targets/x86/64
+        ROOTIMG=$(ls *-ext4-rootfs.img | head -n1)
+        sudo mkdir mnt rootfs-workdir
+        sudo mount -o loop $ROOTIMG mnt
+        sudo cp -a mnt/. rootfs-workdir/
+        sudo umount mnt
+        sudo rm -rf mnt
+        sudo tar -C rootfs-workdir -czf openwrt-x86-64-rootfs.tar.gz .
+        mv openwrt-x86-64-rootfs.tar.gz ../../../
+
+    # ——————————————————————————————
+    # 上传固件结果
+    # ——————————————————————————————
+    - name: Upload firmware artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: immortalwrt25.12-x86-firmware
+        path: |
+          immortal-src/bin/targets/x86/64/*.img
+          immortal-src/bin/targets/x86/64/*.gz
+          immortal-src/bin/targets/x86/64/packages
+
+    - name: Upload rootfs template
+      uses: actions/upload-artifact@v4
+      with:
+        name: openwrt-proxmox-rootfs
+        path: openwrt-x86-64-rootfs.tar.gz
+
+    # ——————————————————————————————
+    # 查看结束时磁盘状态
+    # ——————————————————————————————
+    - name: Final disk usage
+      run: df -h
