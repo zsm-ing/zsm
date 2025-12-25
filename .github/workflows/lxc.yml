@@ -1,4 +1,4 @@
-name: Build ImmortalWRT LXC Rootfs (Stable Advanced)
+name: Build ImmortalWRT LXC Rootfs
 
 on:
   workflow_dispatch:
@@ -16,15 +16,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  setup:
-    name: Setup Environment
+  build:
     runs-on: ubuntu-22.04
-    outputs:
-      immortal_version: ${{ steps.set-version.outputs.immortal_version }}
-      immortal_commit: ${{ steps.set-version.outputs.immortal_commit }}
+    timeout-minutes: 180
+
     steps:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
 
       - name: Install dependencies
         run: |
@@ -35,125 +36,64 @@ jobs:
             libssl-dev wget unzip python3 python3-setuptools \
             rsync subversion file bc tar ccache
           ccache -M 5G
-          export CCACHE_DIR="$RUNNER_TEMP/ccache"
-          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> $GITHUB_ENV
 
       - name: Clone ImmortalWRT
-        id: set-version
         run: |
-          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git immortalwrt
-          cd immortalwrt
-          IMMORTAL_COMMIT=$(git log -1 --format=%h)
-          IMMORTAL_VERSION=$(git describe --tags --always)
-          echo "immortal_commit=$IMMORTAL_COMMIT" >> $GITHUB_OUTPUT
-          echo "immortal_version=$IMMORTAL_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Cache downloads & feeds
-        uses: actions/cache@v3
-        with:
-          path: |
-            immortalwrt/downloads
-            immortalwrt/feeds
-          key: downloads-feeds-${{ github.sha }}
-          restore-keys: |
-            downloads-feeds-
-
-  update_feeds:
-    name: Update Feeds
-    runs-on: ubuntu-22.04
-    needs: setup
-    steps:
-      - name: Checkout workflow repo
-        uses: actions/checkout@v4
-
-      - name: Set IMMORTAL_DIR
-        run: |
+          git clone --depth=50 --branch openwrt-25.12 \
+            https://github.com/immortalwrt/immortalwrt.git immortalwrt
           echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
-          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $IMMORTAL_DIR
-
-      - name: Restore cached feeds
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.IMMORTAL_DIR }}/feeds
-          key: feeds-${{ github.sha }}
-          restore-keys: |
-            feeds-
-
-      - name: Update feeds
-        run: |
-          cd $IMMORTAL_DIR
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-  compile_rootfs:
-    name: Compile LXC Rootfs
-    runs-on: ubuntu-22.04
-    needs: update_feeds
-    env:
-      IMMORTAL_DIR: ${{ github.workspace }}/immortalwrt
-    steps:
-      - name: Checkout workflow repo
-        uses: actions/checkout@v4
-
-      - name: Set IMMORTAL_DIR
-        run: |
-          echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
-          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $IMMORTAL_DIR
 
       - name: Restore build cache
         uses: actions/cache@v3
         with:
           path: |
-            ${{ env.IMMORTAL_DIR }}/build_dir
-            ${{ env.IMMORTAL_DIR }}/staging_dir
-          key: build-cache-${{ github.sha }}
+            immortalwrt/dl
+            immortalwrt/build_dir
+            immortalwrt/staging_dir
+            immortalwrt/feeds
+          key: immortalwrt-${{ github.sha }}
           restore-keys: |
-            build-cache-
+            immortalwrt-
 
       - name: Apply custom config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
           cd $IMMORTAL_DIR
-          test -f ${{ github.workspace }}/.config || { echo "❌ .config 不存在"; exit 1; }
-          cp ${{ github.workspace }}/.config .config
+          test -f $GITHUB_WORKSPACE/.config || { echo "❌ .config 不存在"; exit 1; }
+          cp $GITHUB_WORKSPACE/.config .config
 
-      - name: Update feeds and finalize config
+      # ===== 方法 3：feeds → defconfig → world =====
+      - name: Update feeds & defconfig
         run: |
           cd $IMMORTAL_DIR
-          echo "==== Updating feeds ===="
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
-          echo "==== Finalizing config ===="
           make defconfig
 
-      - name: Compile world (kernel + packages + rootfs)
+      - name: Compile world (LXC rootfs)
         run: |
           cd $IMMORTAL_DIR
-          echo "==== Compiling world ===="
-          make -j$(nproc) world V=s > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
-
-      - name: Verify and compress rootfs
-        run: |
-          cd $IMMORTAL_DIR
-          TAR=$(find bin/targets -name "*rootfs.tar.gz")
-          if [ -z "$TAR" ]; then
-            echo "❌ 未生成 rootfs.tar.gz"
+          make -j$(nproc) world V=s > build.log 2>&1 || {
+            echo "❌ 编译失败，最后 100 行日志："
+            tail -n 100 build.log
             exit 1
-          fi
-          gzip -9 -f "$TAR"
-          echo "ROOTFS=$TAR.gz" >> $GITHUB_ENV
+          }
 
-      - name: Clean up build_dir
+      - name: Collect rootfs
         run: |
           cd $IMMORTAL_DIR
-          rm -rf build_dir tmp
+          ROOTFS=$(find bin/targets -name "*rootfs.tar.gz" | head -n1)
+          [ -n "$ROOTFS" ] || { echo "❌ 未生成 rootfs"; exit 1; }
+          echo "ROOTFS=$ROOTFS" >> $GITHUB_ENV
 
-  release:
-    name: Release LXC Rootfs
-    runs-on: ubuntu-22.04
-    needs: compile_rootfs
-    steps:
+      - name: Set release metadata
+        run: |
+          cd $IMMORTAL_DIR
+          echo "IMMORTAL_COMMIT=$(git log -1 --format=%h)" >> $GITHUB_ENV
+          echo "IMMORTAL_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+
       - name: Delete old releases
         uses: dev-drprasad/delete-older-releases@v0.3.4
         with:
@@ -162,12 +102,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish new release
+      - name: Release LXC rootfs
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: immortalwrt-lxc-${{ needs.setup.outputs.immortal_version }}
-          name: ImmortalWRT LXC Rootfs ${{ needs.setup.outputs.immortal_version }}
-          body: "自动构建的 ImmortalWRT LXC rootfs (commit: ${{ needs.setup.outputs.immortal_commit }})"
-          files: ${{ needs.compile_rootfs.outputs.ROOTFS }}
+          tag_name: immortalwrt-lxc-${{ env.IMMORTAL_VERSION }}-${{ env.BUILD_DATE }}
+          name: ImmortalWRT LXC Rootfs
+          body: |
+            自动构建的 ImmortalWRT LXC rootfs
+
+            Commit: ${{ env.IMMORTAL_COMMIT }}
+            Version: ${{ env.IMMORTAL_VERSION }}
+            Date: ${{ env.BUILD_DATE }}
+          files: ${{ env.ROOTFS }}
           overwrite_files: true
           make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
