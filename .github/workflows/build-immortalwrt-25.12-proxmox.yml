@@ -30,9 +30,6 @@ jobs:
     timeout-minutes: 240
     
     steps:
-    # ——————————————————————————————
-    # 1. 磁盘空间优化
-    # ——————————————————————————————
     - name: Free up disk space
       uses: jlumbroso/free-disk-space@main
       with:
@@ -43,17 +40,11 @@ jobs:
         dotnet: true
         large-packages: true
 
-    # ——————————————————————————————
-    # 2. 拉取仓库代码
-    # ——————————————————————————————
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    # ——————————————————————————————
-    # 3. 环境验证
-    # ——————————————————————————————
     - name: Validate build environment
       run: |
         REQUIRED_TOOLS="gcc g++ make git wget curl python3 perl"
@@ -69,9 +60,6 @@ jobs:
           echo "⚠️ 磁盘空间不足: ${FREE_GB}GB"
         fi
 
-    # ——————————————————————————————
-    # 4. 安装编译依赖
-    # ——————————————————————————————
     - name: Install build dependencies
       run: |
         sudo apt-get update -y
@@ -95,9 +83,6 @@ jobs:
           squashfs-tools \
           dosfstools
 
-    # ——————————————————————————————
-    # 5. 设置编译缓存
-    # ——————————————————————————————
     - name: Setup ccache
       if: ${{ github.event.inputs.enable-ccache == 'yes' }}
       run: |
@@ -106,9 +91,6 @@ jobs:
         echo "CCACHE_DIR=$(realpath ~/.ccache)" >> $GITHUB_ENV
         echo "CCACHE_MAXSIZE=4G" >> $GITHUB_ENV
 
-    # ——————————————————————————————
-    # 6. 克隆 ImmortalWRT 源码
-    # ——————————————————————————————
     - name: Clone ImmortalWRT source
       run: |
         IMMORTAL_DIR="$GITHUB_WORKSPACE/immortal-src"
@@ -125,9 +107,6 @@ jobs:
         echo "IMMORTAL_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
         echo "IMMORTAL_DIR=$IMMORTAL_DIR" >> $GITHUB_ENV
 
-    # ——————————————————————————————
-    # 7. 应用本地配置
-    # ——————————————————————————————
     - name: Apply custom configuration
       run: |
         cd "$IMMORTAL_DIR"
@@ -142,27 +121,18 @@ jobs:
           echo "使用默认配置"
         fi
 
-    # ——————————————————————————————
-    # 8. 更新 feeds
-    # ——————————————————————————————
     - name: Update feeds
       run: |
         cd "$IMMORTAL_DIR"
         timeout 300 ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # ——————————————————————————————
-    # 9. 生成默认配置
-    # ——————————————————————————————
     - name: Generate default config
       if: ${{ github.event.inputs.use-local-config == 'no' }}
       run: |
         cd "$IMMORTAL_DIR"
         make defconfig
 
-    # ——————————————————————————————
-    # 10. 计算并行任务数
-    # ——————————————————————————————
     - name: Calculate job count
       run: |
         if [ "${{ github.event.inputs.make-jobs }}" == "0" ]; then
@@ -173,9 +143,6 @@ jobs:
         echo "JOBS=$JOBS" >> $GITHUB_ENV
         echo "并行任务数: $JOBS"
 
-    # ——————————————————————————————
-    # 11. 编译固件
-    # ——————————————————————————————
     - name: Compile firmware
       timeout-minutes: 180
       run: |
@@ -196,9 +163,6 @@ jobs:
           exit 1
         fi
 
-    # ——————————————————————————————
-    # 12. 生成 Proxmox 模板
-    # ——————————————————————————————
     - name: Generate Proxmox template
       run: |
         cd "$IMMORTAL_DIR/bin/targets/x86/64"
@@ -230,42 +194,34 @@ jobs:
         
         echo "模板生成完成: $(du -h $GITHUB_WORKSPACE/openwrt-x86-64-rootfs.tar.gz | cut -f1)"
 
-    # ——————————————————————————————
-    # 13. 创建构建信息
-    # ——————————————————————————————
     - name: Create build info
       run: |
         BUILD_INFO="$GITHUB_WORKSPACE/build-info.md"
         
-        cat > "$BUILD_INFO" << 'EOF'
-# ImmortalWRT 构建报告
-
-## 构建信息
-- **时间**: $(date)
-- **构建ID**: ${{ github.run_id }}-${{ github.run_attempt }}
-- **提交**: ${{ github.sha }}
-- **触发者**: ${{ github.actor }}
-
-## 配置
-- **本地配置**: ${{ github.event.inputs.use-local-config }}
-- **启用缓存**: ${{ github.event.inputs.enable-ccache }}
-- **并行任务**: ${{ github.event.inputs.make-jobs }}
-
-## 源码信息
-- **分支**: openwrt-25.12
-- **提交**: ${{ env.IMMORTAL_COMMIT }}
-
-## 生成文件
-EOF
+        echo "# ImmortalWRT 构建报告" > "$BUILD_INFO"
+        echo "" >> "$BUILD_INFO"
+        echo "## 构建信息" >> "$BUILD_INFO"
+        echo "- **时间**: $(date)" >> "$BUILD_INFO"
+        echo "- **构建ID**: ${{ github.run_id }}-${{ github.run_attempt }}" >> "$BUILD_INFO"
+        echo "- **提交**: ${{ github.sha }}" >> "$BUILD_INFO"
+        echo "- **触发者**: ${{ github.actor }}" >> "$BUILD_INFO"
+        echo "" >> "$BUILD_INFO"
+        echo "## 配置" >> "$BUILD_INFO"
+        echo "- **本地配置**: ${{ github.event.inputs.use-local-config }}" >> "$BUILD_INFO"
+        echo "- **启用缓存**: ${{ github.event.inputs.enable-ccache }}" >> "$BUILD_INFO"
+        echo "- **并行任务**: ${{ github.event.inputs.make-jobs }}" >> "$BUILD_INFO"
+        echo "" >> "$BUILD_INFO"
+        echo "## 源码信息" >> "$BUILD_INFO"
+        echo "- **分支**: openwrt-25.12" >> "$BUILD_INFO"
+        echo "- **提交**: ${{ env.IMMORTAL_COMMIT }}" >> "$BUILD_INFO"
+        echo "" >> "$BUILD_INFO"
+        echo "## 生成文件" >> "$BUILD_INFO"
         
         find "$GITHUB_WORKSPACE" -maxdepth 1 -name "*.tar.gz" -o -name "*.img" | while read file; do
           SIZE=$(du -h "$file" | cut -f1)
           echo "- $(basename "$file") ($SIZE)" >> "$BUILD_INFO"
         done
 
-    # ——————————————————————————————
-    # 14. 上传固件
-    # ——————————————————————————————
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
@@ -276,9 +232,6 @@ EOF
           ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/packages/
         retention-days: 30
 
-    # ——————————————————————————————
-    # 15. 上传 Proxmox 模板
-    # ——————————————————————————————
     - name: Upload Proxmox template
       uses: actions/upload-artifact@v4
       with:
@@ -288,9 +241,6 @@ EOF
           $GITHUB_WORKSPACE/build-info.md
         retention-days: 30
 
-    # ——————————————————————————————
-    # 16. 显示构建时间
-    # ——————————————————————————————
     - name: Show build time
       run: |
         echo "总构建时间: $((SECONDS / 3600))小时$(((SECONDS % 3600) / 60))分钟$((SECONDS % 60))秒"
