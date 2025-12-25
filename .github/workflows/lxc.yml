@@ -15,9 +15,6 @@ concurrency:
   group: immortalwrt-lxc
   cancel-in-progress: true
 
-env:
-  RUNNER_TEMP: ${{ runner.temp }}
-
 jobs:
   setup:
     name: Setup Build Environment
@@ -42,6 +39,7 @@ jobs:
           echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
 
       - name: Clone ImmortalWRT
+        id: set-output-version
         run: |
           git clone --depth=50 --branch openwrt-25.12 \
             https://github.com/immortalwrt/immortalwrt.git immortalwrt
