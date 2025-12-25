@@ -1,0 +1,178 @@
+name: Build ImmortalWRT x86_64 with Proxmox Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      use-local-config:
+        description: '是否使用仓库里的 .config 文件？(yes/no)'
+        required: true
+        default: 'yes'
+      enable-ccache:
+        description: '是否启用编译缓存？(yes/no)'
+        required: true
+        default: 'yes'
+      make-jobs:
+        description: '并行编译任务数（0=自动）'
+        required: true
+        default: '0'
+      clean-before-build:
+        description: '编译前清理目录？(yes/no)'
+        required: true
+        default: 'yes'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    
+    steps:
+    - name: Free up disk space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: true
+        docker-images: true
+        swap-storage: true
+        android: true
+        dotnet: true
+        large-packages: true
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Validate build environment
+      run: |
+        REQUIRED_TOOLS="gcc g++ make git wget curl python3 perl"
+        for tool in $REQUIRED_TOOLS; do
+          if ! command -v $tool >/dev/null 2>&1; then
+            echo "❌ 缺少工具: $tool"
+            exit 1
+          fi
+        done
+        
+        FREE_GB=$(df -BG . | awk 'NR==2 {print $4}' | sed 's/G//')
+        if [ "$FREE_GB" -lt 20 ]; then
+          echo "⚠️ 磁盘空间不足: ${FREE_GB}GB"
+        fi
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y \
+          build-essential \
+          ccache \
+          libncurses5-dev \
+          libncursesw5-dev \
+          zlib1g-dev \
+          gawk \
+          flex \
+          gettext \
+          libssl-dev \
+          wget \
+          unzip \
+          python3 \
+          python3-setuptools \
+          subversion \
+          file \
+          bc \
+          squashfs-tools \
+          dosfstools
+
+    - name: Setup ccache
+      if: ${{ github.event.inputs.enable-ccache == 'yes' }}
+      run: |
+        mkdir -p ~/.ccache
+        echo "max_size = 4.0G" > ~/.ccache/ccache.conf
+        echo "CCACHE_DIR=$(realpath ~/.ccache)" >> $GITHUB_ENV
+        echo "CCACHE_MAXSIZE=4G" >> $GITHUB_ENV
+
+    - name: Clone ImmortalWRT source
+      run: |
+        IMMORTAL_DIR="$GITHUB_WORKSPACE/immortal-src"
+        
+        if [ -d "$IMMORTAL_DIR" ] && [ "${{ github.event.inputs.clean-before-build }}" == "yes" ]; then
+          rm -rf "$IMMORTAL_DIR"
+        fi
+        
+        git clone --branch openwrt-25.12 --depth=50 --single-branch \
+          https://github.com/immortalwrt/immortalwrt.git "$IMMORTAL_DIR"
+        
+        cd "$IMMORTAL_DIR"
+        LATEST_COMMIT=$(git log -1 --format="%H - %s (%ci)")
+        echo "IMMORTAL_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
+        echo "IMMORTAL_DIR=$IMMORTAL_DIR" >> $GITHUB_ENV
+
+    - name: Apply custom configuration
+      run: |
+        cd "$IMMORTAL_DIR"
+        
+        CONFIG_SOURCE="$GITHUB_WORKSPACE/.config"
+        CONFIG_TARGET=".config"
+        
+        if [ "${{ github.event.inputs.use-local-config }}" == "yes" ] && [ -f "$CONFIG_SOURCE" ]; then
+          cp -v "$CONFIG_SOURCE" "$CONFIG_TARGET"
+          echo "使用自定义配置"
+        else
+          echo "使用默认配置"
+        fi
+
+    - name: Update feeds
+      run: |
+        cd "$IMMORTAL_DIR"
+        timeout 300 ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Generate default config
+      if: ${{ github.event.inputs.use-local-config == 'no' }}
+      run: |
+        cd "$IMMORTAL_DIR"
+        make defconfig
+
+    - name: Calculate job count
+      run: |
+        if [ "${{ github.event.inputs.make-jobs }}" == "0" ]; then
+          JOBS=$(( $(nproc) + 1 ))
+        else
+          JOBS=${{ github.event.inputs.make-jobs }}
+        fi
+        echo "JOBS=$JOBS" >> $GITHUB_ENV
+        echo "并行任务数: $JOBS"
+
+    - name: Compile firmware
+      timeout-minutes: 180
+      run: |
+        cd "$IMMORTAL_DIR"
+        export FORCE_UNSAFE_CONFIGURE=1
+        
+        if [ "${{ github.event.inputs.enable-ccache }}" == "yes" ]; then
+          make -j$JOBS V=s 2>&1 | tee build.log || make V=sc 2>&1 | tee -a build.log
+        else
+          make -j$JOBS V=s 2>&1 | tee build.log
+        fi
+        
+        if [ -f "bin/targets/x86/64/config.buildinfo" ]; then
+          echo "编译成功"
+          cp build.log "$GITHUB_WORKSPACE/build.log"
+        else
+          echo "编译失败"
+          exit 1
+        fi
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: immortalwrt-x86-64-firmware
+        path: |
+          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/*.img
+          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/*.gz
+          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/packages/
+        retention-days: 30
+
+    - name: Show build time
+      run: |
+        echo "总构建时间: $((SECONDS / 3600))小时$(((SECONDS % 3600) / 60))分钟$((SECONDS % 60))秒"
