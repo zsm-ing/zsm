@@ -1,4 +1,4 @@
-name: Build ImmortalWRT LXC Rootfs (Advanced)
+name: Build ImmortalWRT LXC Rootfs (Stable Advanced)
 
 on:
   workflow_dispatch:
@@ -17,13 +17,13 @@ concurrency:
 
 jobs:
   setup:
-    name: Setup Build Environment
+    name: Setup Environment
     runs-on: ubuntu-22.04
     outputs:
-      immortal_version: ${{ steps.set-output-version.outputs.immortal_version }}
-      immortal_commit: ${{ steps.set-output-version.outputs.immortal_commit }}
+      immortal_version: ${{ steps.set-version.outputs.immortal_version }}
+      immortal_commit: ${{ steps.set-version.outputs.immortal_commit }}
     steps:
-      - name: Checkout repository
+      - name: Checkout workflow repo
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -39,10 +39,9 @@ jobs:
           echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
 
       - name: Clone ImmortalWRT
-        id: set-output-version
+        id: set-version
         run: |
-          git clone --depth=50 --branch openwrt-25.12 \
-            https://github.com/immortalwrt/immortalwrt.git immortalwrt
+          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
           IMMORTAL_COMMIT=$(git log -1 --format=%h)
           IMMORTAL_VERSION=$(git describe --tags --always)
@@ -64,11 +63,13 @@ jobs:
     runs-on: ubuntu-22.04
     needs: setup
     steps:
-      - name: Checkout repository
+      - name: Checkout workflow repo
         uses: actions/checkout@v4
 
       - name: Set IMMORTAL_DIR
-        run: echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+        run: |
+          echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $GITHUB_WORKSPACE/immortalwrt
 
       - name: Restore cached feeds
         uses: actions/cache@v3
@@ -91,11 +92,13 @@ jobs:
     env:
       IMMORTAL_DIR: ${{ github.workspace }}/immortalwrt
     steps:
-      - name: Checkout repository
+      - name: Checkout workflow repo
         uses: actions/checkout@v4
 
       - name: Set IMMORTAL_DIR
-        run: echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+        run: |
+          echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $IMMORTAL_DIR
 
       - name: Restore build cache
         uses: actions/cache@v3
