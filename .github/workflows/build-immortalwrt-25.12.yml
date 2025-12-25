@@ -1,4 +1,4 @@
-name: Build ImmortalWRT x86_64 with Proxmox Template
+name: Build ImmortalWRT
 
 on:
   workflow_dispatch:
