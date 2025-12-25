@@ -15,23 +15,20 @@ jobs:
     timeout-minutes: 480
 
     steps:
-      - name: Checkout repo
+      - name: Checkout this repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Clone ImmortalWRT 25.12 branch
+      - name: Clone ImmortalWRT openwrt-25.12 branch
         run: |
-          git clone https://github.com/immortalwrt/immortalwrt.git immortal-src
-          cd immortal-src
-          git fetch --depth=1 origin refs/heads/25.12-SNAPSHOT
-          git checkout 25.12-SNAPSHOT
+          git clone --single-branch --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git immortal-src
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt update
           sudo apt install -y build-essential git-core libncurses5-dev zlib1g-dev \
-            gawk flex gettext libssl-dev wget unzip python3-distutils ccache
+            gawk flex gettext libssl-dev wget unzip python3-distutils ccache squashfs-tools
 
       - name: Copy local .config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
@@ -55,30 +52,16 @@ jobs:
           cd immortal-src
           make -j$(nproc) V=s
 
-      - name: Extract & package rootfs for Proxmox LXC
+      - name: Generate rootfs.tar.gz for Proxmox LXC
         run: |
           cd immortal-src/bin/targets/x86/64
-
-          # 找到 ext4 rootfs 镜像文件 
           ROOTIMG=$(ls *-ext4-rootfs.img | head -n1)
-
-          # 准备临时挂载点和工作目录
           sudo mkdir mnt rootfs-workdir
-
-          # 挂载 ext4 镜像
           sudo mount -o loop $ROOTIMG mnt
-
-          # 拷贝 rootfs 到工作目录
           sudo cp -a mnt/. rootfs-workdir/
-
-          # 卸载
           sudo umount mnt
-          sudo rmdir mnt
-
-          # 打包成适合 Proxmox LXC 的 tar.gz
+          sudo rm -rf mnt
           sudo tar -C rootfs-workdir -czf openwrt-x86-64-rootfs.tar.gz .
-
-          # 移到上一级目录
           mv openwrt-x86-64-rootfs.tar.gz ../../../
 
       - name: Upload firmware artifacts
