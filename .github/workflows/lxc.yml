@@ -69,7 +69,7 @@ jobs:
       - name: Set IMMORTAL_DIR
         run: |
           echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
-          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $GITHUB_WORKSPACE/immortalwrt
+          git clone --depth=50 --branch openwrt-25.12 https://github.com/immortalwrt/immortalwrt.git $IMMORTAL_DIR
 
       - name: Restore cached feeds
         uses: actions/cache@v3
@@ -117,16 +117,21 @@ jobs:
           test -f ${{ github.workspace }}/.config || { echo "❌ .config 不存在"; exit 1; }
           cp ${{ github.workspace }}/.config .config
 
-      - name: Finalize config
+      - name: Update feeds and finalize config
         run: |
           cd $IMMORTAL_DIR
-          make defconfig
-          grep CONFIG_TARGET_ROOTFS .config || true
+          echo "==== Updating feeds ===="
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: Compile rootfs
+          echo "==== Finalizing config ===="
+          make defconfig
+
+      - name: Compile world (kernel + packages + rootfs)
         run: |
           cd $IMMORTAL_DIR
-          make -j$(nproc) target-image V=s > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
+          echo "==== Compiling world ===="
+          make -j$(nproc) world V=s > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
 
       - name: Verify and compress rootfs
         run: |
