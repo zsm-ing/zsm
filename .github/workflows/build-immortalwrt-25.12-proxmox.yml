@@ -28,8 +28,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential git-core libncurses5-dev zlib1g-dev \
-            gawk flex gettext libssl-dev wget unzip python3-distutils ccache squashfs-tools
-
+            gawk flex gettext libssl-dev wget unzip python3-setuptools ccache squashfs-tools
+            
       - name: Copy local .config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
