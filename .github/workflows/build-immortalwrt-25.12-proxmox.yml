@@ -33,8 +33,8 @@ jobs:
       - name: Copy local .config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
-          cp .config immortal-src/.config
-
+          cp "$GITHUB_WORKSPACE/.config" immortal-src/.config
+      
       - name: Update feeds
         run: |
           cd immortal-src
