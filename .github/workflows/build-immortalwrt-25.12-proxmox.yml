@@ -82,7 +82,7 @@ jobs:
           mv openwrt-x86-64-rootfs.tar.gz ../../../
 
       - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: immortalwrt25.12-x86-firmware
           path: |
