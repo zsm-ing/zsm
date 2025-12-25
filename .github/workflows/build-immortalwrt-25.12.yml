@@ -82,7 +82,7 @@ jobs:
             echo "❌ 未生成 rootfs.tar.gz"
             exit 1
           fi
-          echo "ROOTFS=$TAR" >> $GITHUB_ENV
+            echo "ROOTFS=$TAR" >> $GITHUB_ENV
 
       - name: Delete old releases
         uses: dev-drprasad/delete-older-releases@v0.3.4
