@@ -1,22 +1,10 @@
-name: Build ImmortalWRT
+name: Build ImmortalWRT LXC Rootfs
 
 on:
   workflow_dispatch:
     inputs:
       use-local-config:
-        description: '是否使用仓库里的 .config 文件？(yes/no)'
-        required: true
-        default: 'yes'
-      enable-ccache:
-        description: '是否启用编译缓存？(yes/no)'
-        required: true
-        default: 'yes'
-      make-jobs:
-        description: '并行编译任务数（0=自动）'
-        required: true
-        default: '0'
-      clean-before-build:
-        description: '编译前清理目录？(yes/no)'
+        description: '使用仓库中的 .config？'
         required: true
         default: 'yes'
 
@@ -24,122 +12,99 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: immortalwrt-lxc
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
+    timeout-minutes: 180
 
     steps:
-    - name: Record start time
-      run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Free up disk space
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: true
-        docker-images: true
-        swap-storage: true
-        android: true
-        dotnet: true
-        large-packages: true
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential gawk flex gettext \
+            libncurses5-dev libncursesw5-dev zlib1g-dev \
+            libssl-dev wget unzip python3 python3-setuptools \
+            rsync subversion file bc tar
 
-    - name: Install build dependencies
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y \
-          build-essential ccache gawk flex gettext \
-          libncurses5-dev libncursesw5-dev zlib1g-dev \
-          libssl-dev wget unzip python3 python3-setuptools \
-          subversion file bc squashfs-tools dosfstools
+      - name: Clone ImmortalWRT
+        run: |
+          git clone --depth=50 --branch openwrt-25.12 \
+            https://github.com/immortalwrt/immortalwrt.git immortalwrt
+          cd immortalwrt
+          echo "IMMORTAL_DIR=$PWD" >> $GITHUB_ENV
+          echo "IMMORTAL_COMMIT=$(git log -1 --format=%h)" >> $GITHUB_ENV
 
-    - name: Setup ccache
-      if: ${{ github.event.inputs['enable-ccache'] == 'yes' }}
-      run: |
-        mkdir -p ~/.ccache
-        echo "max_size = 4G" > ~/.ccache/ccache.conf
-        echo "compiler_check = content" >> ~/.ccache/ccache.conf
-        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+      # === 关键：feeds 一定在 config 之前 ===
+      - name: Update feeds
+        run: |
+          cd "$IMMORTAL_DIR"
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-    - name: Clone ImmortalWRT source
-      run: |
-        IMMORTAL_DIR="$GITHUB_WORKSPACE/immortal-src"
-
-        if [ -d "$IMMORTAL_DIR" ] && [ "${{ github.event.inputs['clean-before-build'] }}" = "yes" ]; then
-          rm -rf "$IMMORTAL_DIR"
-        fi
-
-        git clone --branch openwrt-25.12 --depth=50 \
-          https://github.com/immortalwrt/immortalwrt.git "$IMMORTAL_DIR"
-
-        cd "$IMMORTAL_DIR"
-        echo "IMMORTAL_DIR=$IMMORTAL_DIR" >> $GITHUB_ENV
-        echo "IMMORTAL_COMMIT=$(git log -1 --format='%h')" >> $GITHUB_ENV
-
-    - name: Apply config
-      run: |
-        cd "$IMMORTAL_DIR"
-        if [ "${{ github.event.inputs['use-local-config'] }}" = "yes" ] && [ -f "$GITHUB_WORKSPACE/.config" ]; then
+      - name: Apply custom config
+        if: ${{ github.event.inputs.use-local-config == 'yes' }}
+        run: |
+          cd "$IMMORTAL_DIR"
+          test -f "$GITHUB_WORKSPACE/.config" || {
+            echo "❌ .config 不存在"
+            exit 1
+          }
           cp "$GITHUB_WORKSPACE/.config" .config
-        fi
 
-    - name: Update feeds
-      run: |
-        cd "$IMMORTAL_DIR"
-        timeout 900 ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: Finalize config
+        run: |
+          cd "$IMMORTAL_DIR"
+          make defconfig
 
-    - name: Finalize config
-      run: |
-        cd "$IMMORTAL_DIR"
-        make defconfig
+          echo "==== Rootfs config check ===="
+          grep CONFIG_TARGET_ROOTFS .config || true
 
-    - name: Calculate jobs
-      run: |
-        if [ "${{ github.event.inputs['make-jobs'] }}" = "0" ]; then
-          JOBS=$(( $(nproc) + 1 ))
-        else
-          JOBS=${{ github.event.inputs['make-jobs'] }}
-        fi
-        echo "JOBS=$JOBS" >> $GITHUB_ENV
+      - name: Compile rootfs
+        run: |
+          cd "$IMMORTAL_DIR"
+          make -j$(nproc) world
 
-    - name: Compile firmware
-      timeout-minutes: 180
-      run: |
-        cd "$IMMORTAL_DIR"
-        export FORCE_UNSAFE_CONFIGURE=1
+      - name: Verify LXC rootfs
+        run: |
+          cd "$IMMORTAL_DIR"
+          TAR=$(find bin/targets -name "*rootfs.tar.gz")
+          if [ -z "$TAR" ]; then
+            echo "❌ 未生成 rootfs.tar.gz"
+            exit 1
+          fi
+          echo "ROOTFS=$TAR" >> $GITHUB_ENV
 
-        make -j$JOBS V=s || make -j$JOBS V=sc
+      - name: Delete old releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 1
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        find bin/targets -name "*.img" | grep -q . || {
-          echo "❌ 未生成 IMG 固件"
-          exit 1
-        }
+      - name: Release LXC rootfs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: immortalwrt-lxc-latest
+          overwrite: true
+          name: ImmortalWRT LXC Rootfs
+          body: |
+            ImmortalWRT for Proxmox VE LXC
 
-    - name: Delete old releases (keep latest)
-      uses: dev-drprasad/delete-older-releases@v0.3.4
-      with:
-        keep_latest: 1
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            Branch: openwrt-25.12
+            Commit: ${{ env.IMMORTAL_COMMIT }}
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: immortalwrt-latest
-        name: ImmortalWRT Latest (IMG)
-        body: |
-          ImmortalWRT 自动构建
-          仅包含可刷写 IMG 固件
-
-          分支: openwrt-25.12
-          Commit: ${{ env.IMMORTAL_COMMIT }}
-
-        files: |
-          ${{ env.IMMORTAL_DIR }}/bin/targets/**/*.img
+            用法：
+            pct create <vmid> rootfs.tar.gz --unprivileged 1
+          files: |
+            ${{ env.ROOTFS }}
