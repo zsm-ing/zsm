@@ -28,8 +28,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 240
-    
+
     steps:
+    - name: Record start time
+      run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
+
     - name: Free up disk space
       uses: jlumbroso/free-disk-space@main
       with:
@@ -49,96 +52,73 @@ jobs:
       run: |
         REQUIRED_TOOLS="gcc g++ make git wget curl python3 perl"
         for tool in $REQUIRED_TOOLS; do
-          if ! command -v $tool >/dev/null 2>&1; then
+          command -v $tool >/dev/null 2>&1 || {
             echo "❌ 缺少工具: $tool"
             exit 1
-          fi
+          }
         done
-        
+
         FREE_GB=$(df -BG . | awk 'NR==2 {print $4}' | sed 's/G//')
-        if [ "$FREE_GB" -lt 20 ]; then
-          echo "⚠️ 磁盘空间不足: ${FREE_GB}GB"
-        fi
+        echo "剩余磁盘空间: ${FREE_GB}GB"
 
     - name: Install build dependencies
       run: |
         sudo apt-get update -y
         sudo apt-get install -y \
-          build-essential \
-          ccache \
-          libncurses5-dev \
-          libncursesw5-dev \
-          zlib1g-dev \
-          gawk \
-          flex \
-          gettext \
-          libssl-dev \
-          wget \
-          unzip \
-          python3 \
-          python3-setuptools \
-          subversion \
-          file \
-          bc \
-          squashfs-tools \
-          dosfstools
+          build-essential ccache gawk flex gettext \
+          libncurses5-dev libncursesw5-dev zlib1g-dev \
+          libssl-dev wget unzip python3 python3-setuptools \
+          subversion file bc squashfs-tools dosfstools
 
     - name: Setup ccache
-      if: ${{ github.event.inputs.enable-ccache == 'yes' }}
+      if: ${{ github.event.inputs['enable-ccache'] == 'yes' }}
       run: |
         mkdir -p ~/.ccache
-        echo "max_size = 4.0G" > ~/.ccache/ccache.conf
-        echo "CCACHE_DIR=$(realpath ~/.ccache)" >> $GITHUB_ENV
-        echo "CCACHE_MAXSIZE=4G" >> $GITHUB_ENV
+        cat <<EOF > ~/.ccache/ccache.conf
+        max_size = 4G
+        compiler_check = content
+        EOF
+        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
 
     - name: Clone ImmortalWRT source
       run: |
         IMMORTAL_DIR="$GITHUB_WORKSPACE/immortal-src"
-        
-        if [ -d "$IMMORTAL_DIR" ] && [ "${{ github.event.inputs.clean-before-build }}" == "yes" ]; then
+
+        if [ -d "$IMMORTAL_DIR" ] && [ "${{ github.event.inputs['clean-before-build'] }}" = "yes" ]; then
           rm -rf "$IMMORTAL_DIR"
         fi
-        
-        git clone --branch openwrt-25.12 --depth=50 --single-branch \
+
+        git clone --branch openwrt-25.12 --depth=50 \
           https://github.com/immortalwrt/immortalwrt.git "$IMMORTAL_DIR"
-        
+
         cd "$IMMORTAL_DIR"
-        LATEST_COMMIT=$(git log -1 --format="%H - %s (%ci)")
-        echo "IMMORTAL_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
         echo "IMMORTAL_DIR=$IMMORTAL_DIR" >> $GITHUB_ENV
+        echo "IMMORTAL_COMMIT=$(git log -1 --format='%h')" >> $GITHUB_ENV
 
     - name: Apply custom configuration
       run: |
         cd "$IMMORTAL_DIR"
-        
-        CONFIG_SOURCE="$GITHUB_WORKSPACE/.config"
-        CONFIG_TARGET=".config"
-        
-        if [ "${{ github.event.inputs.use-local-config }}" == "yes" ] && [ -f "$CONFIG_SOURCE" ]; then
-          cp -v "$CONFIG_SOURCE" "$CONFIG_TARGET"
-          echo "使用自定义配置"
-        else
-          echo "使用默认配置"
+        if [ "${{ github.event.inputs['use-local-config'] }}" = "yes" ] && [ -f "$GITHUB_WORKSPACE/.config" ]; then
+          cp -v "$GITHUB_WORKSPACE/.config" .config
         fi
 
     - name: Update feeds
       run: |
         cd "$IMMORTAL_DIR"
-        timeout 300 ./scripts/feeds update -a
+        timeout 900 ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Generate default config
-      if: ${{ github.event.inputs.use-local-config == 'no' }}
+    - name: Finalize config
       run: |
         cd "$IMMORTAL_DIR"
         make defconfig
 
     - name: Calculate job count
       run: |
-        if [ "${{ github.event.inputs.make-jobs }}" == "0" ]; then
+        if [ "${{ github.event.inputs['make-jobs'] }}" = "0" ]; then
           JOBS=$(( $(nproc) + 1 ))
         else
-          JOBS=${{ github.event.inputs.make-jobs }}
+          JOBS=${{ github.event.inputs['make-jobs'] }}
         fi
         echo "JOBS=$JOBS" >> $GITHUB_ENV
         echo "并行任务数: $JOBS"
@@ -148,31 +128,27 @@ jobs:
       run: |
         cd "$IMMORTAL_DIR"
         export FORCE_UNSAFE_CONFIGURE=1
-        
-        if [ "${{ github.event.inputs.enable-ccache }}" == "yes" ]; then
-          make -j$JOBS V=s 2>&1 | tee build.log || make V=sc 2>&1 | tee -a build.log
-        else
-          make -j$JOBS V=s 2>&1 | tee build.log
-        fi
-        
-        if [ -f "bin/targets/x86/64/config.buildinfo" ]; then
-          echo "编译成功"
-          cp build.log "$GITHUB_WORKSPACE/build.log"
-        else
-          echo "编译失败"
+
+        make -j$JOBS V=s 2>&1 | tee build.log || \
+        make -j$JOBS V=sc 2>&1 | tee -a build.log
+
+        find bin/targets -name "config.buildinfo" | grep -q . || {
+          echo "❌ 编译失败"
           exit 1
-        fi
+        }
+
+        cp build.log "$GITHUB_WORKSPACE/build.log"
 
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: immortalwrt-x86-64-firmware
+        name: immortalwrt-${{ env.IMMORTAL_COMMIT }}
         path: |
-          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/*.img
-          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/*.gz
-          ${{ env.IMMORTAL_DIR }}/bin/targets/x86/64/packages/
+          ${{ env.IMMORTAL_DIR }}/bin/targets/**/*
         retention-days: 30
 
     - name: Show build time
       run: |
-        echo "总构建时间: $((SECONDS / 3600))小时$(((SECONDS % 3600) / 60))分钟$((SECONDS % 60))秒"
+        END=$(date +%s)
+        ELAPSED=$((END - BUILD_START))
+        echo "总构建时间: $((ELAPSED/3600))小时$(((ELAPSED%3600)/60))分钟$((ELAPSED%60))秒"
