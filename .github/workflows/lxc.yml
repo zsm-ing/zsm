@@ -15,14 +15,16 @@ concurrency:
   group: immortalwrt-lxc
   cancel-in-progress: true
 
+env:
+  RUNNER_TEMP: ${{ runner.temp }}
+
 jobs:
   setup:
     name: Setup Build Environment
     runs-on: ubuntu-22.04
     outputs:
-      immortal_dir: ${{ steps.set-path.outputs.immortal_dir }}
-      immortal_version: ${{ steps.set-path.outputs.immortal_version }}
-      immortal_commit: ${{ steps.set-path.outputs.immortal_commit }}
+      immortal_version: ${{ steps.set-output-version.outputs.immortal_version }}
+      immortal_commit: ${{ steps.set-output-version.outputs.immortal_commit }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,14 +42,12 @@ jobs:
           echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
 
       - name: Clone ImmortalWRT
-        id: set-path
         run: |
           git clone --depth=50 --branch openwrt-25.12 \
             https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
           IMMORTAL_COMMIT=$(git log -1 --format=%h)
           IMMORTAL_VERSION=$(git describe --tags --always)
-          echo "immortal_dir=$PWD" >> $GITHUB_OUTPUT
           echo "immortal_commit=$IMMORTAL_COMMIT" >> $GITHUB_OUTPUT
           echo "immortal_version=$IMMORTAL_VERSION" >> $GITHUB_OUTPUT
 
@@ -66,28 +66,38 @@ jobs:
     runs-on: ubuntu-22.04
     needs: setup
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set IMMORTAL_DIR
+        run: echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+
       - name: Restore cached feeds
         uses: actions/cache@v3
         with:
-          path: ${{ needs.setup.outputs.immortal_dir }}/feeds
+          path: ${{ env.IMMORTAL_DIR }}/feeds
           key: feeds-${{ github.sha }}
           restore-keys: |
             feeds-
+
       - name: Update feeds
         run: |
-          cd ${{ needs.setup.outputs.immortal_dir }}
+          cd $IMMORTAL_DIR
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
   compile_rootfs:
     name: Compile LXC Rootfs
     runs-on: ubuntu-22.04
-    needs: [setup, update_feeds]
+    needs: update_feeds
     env:
-      IMMORTAL_DIR: ${{ needs.setup.outputs.immortal_dir }}
+      IMMORTAL_DIR: ${{ github.workspace }}/immortalwrt
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set IMMORTAL_DIR
+        run: echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
 
       - name: Restore build cache
         uses: actions/cache@v3
@@ -102,24 +112,24 @@ jobs:
       - name: Apply custom config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
-          cd ${{ env.IMMORTAL_DIR }}
+          cd $IMMORTAL_DIR
           test -f ${{ github.workspace }}/.config || { echo "❌ .config 不存在"; exit 1; }
           cp ${{ github.workspace }}/.config .config
 
       - name: Finalize config
         run: |
-          cd ${{ env.IMMORTAL_DIR }}
+          cd $IMMORTAL_DIR
           make defconfig
           grep CONFIG_TARGET_ROOTFS .config || true
 
       - name: Compile rootfs
         run: |
-          cd ${{ env.IMMORTAL_DIR }}
+          cd $IMMORTAL_DIR
           make -j$(nproc) target-image V=s > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
 
       - name: Verify and compress rootfs
         run: |
-          cd ${{ env.IMMORTAL_DIR }}
+          cd $IMMORTAL_DIR
           TAR=$(find bin/targets -name "*rootfs.tar.gz")
           if [ -z "$TAR" ]; then
             echo "❌ 未生成 rootfs.tar.gz"
@@ -130,7 +140,7 @@ jobs:
 
       - name: Clean up build_dir
         run: |
-          cd ${{ env.IMMORTAL_DIR }}
+          cd $IMMORTAL_DIR
           rm -rf build_dir tmp
 
   release:
