@@ -96,15 +96,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: immortalwrt-lxc-latest
-          overwrite: true
           name: ImmortalWRT LXC Rootfs
-          body: |
-            ImmortalWRT for Proxmox VE LXC
-
-            Branch: openwrt-25.12
-            Commit: ${{ env.IMMORTAL_COMMIT }}
-
-            用法：
-            pct create <vmid> rootfs.tar.gz --unprivileged 1
-          files: |
-            ${{ env.ROOTFS }}
+          body: "自动构建的 ImmortalWRT LXC rootfs"
+          files: ${{ env.ROOTFS }}
+          overwrite_files: true
+          make_latest: true
