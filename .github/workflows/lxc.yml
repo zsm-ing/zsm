@@ -15,9 +15,6 @@ concurrency:
   group: immortalwrt-lxc
   cancel-in-progress: true
 
-env:
-  CCACHE_DIR: ${{ runner.temp }}/ccache
-
 jobs:
   setup:
     name: Setup Build Environment
@@ -39,7 +36,8 @@ jobs:
             libssl-dev wget unzip python3 python3-setuptools \
             rsync subversion file bc tar ccache
           ccache -M 5G
-          export PATH="/usr/lib/ccache:$PATH"
+          export CCACHE_DIR="$RUNNER_TEMP/ccache"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
 
       - name: Clone ImmortalWRT
         id: set-path
@@ -117,7 +115,7 @@ jobs:
       - name: Compile rootfs
         run: |
           cd ${{ env.IMMORTAL_DIR }}
-          make -j$(nproc) target-image V=s || { tail -n 100 log; exit 1; }
+          make -j$(nproc) target-image V=s > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
 
       - name: Verify and compress rootfs
         run: |
