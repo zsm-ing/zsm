@@ -25,7 +25,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        run: |
+          sudo rm -rf /var/lib/apt/lists/* /tmp/*
+          df -h
 
       - name: Install dependencies
         run: |
@@ -34,7 +36,9 @@ jobs:
             build-essential gawk flex gettext \
             libncurses5-dev libncursesw5-dev zlib1g-dev \
             libssl-dev wget unzip python3 python3-setuptools \
-            rsync subversion file bc tar
+            rsync subversion file bc tar ccache
+          export PATH="/usr/lib/ccache:$PATH"
+          ccache -M 5G
 
       - name: Clone ImmortalWRT
         run: |
@@ -44,7 +48,6 @@ jobs:
           echo "IMMORTAL_DIR=$PWD" >> $GITHUB_ENV
           echo "IMMORTAL_COMMIT=$(git log -1 --format=%h)" >> $GITHUB_ENV
 
-      # === 关键：feeds 一定在 config 之前 ===
       - name: Update feeds
         run: |
           cd "$IMMORTAL_DIR"
@@ -55,24 +58,20 @@ jobs:
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
           cd "$IMMORTAL_DIR"
-          test -f "$GITHUB_WORKSPACE/.config" || {
-            echo "❌ .config 不存在"
-            exit 1
-          }
+          test -f "$GITHUB_WORKSPACE/.config" || { echo "❌ .config 不存在"; exit 1; }
           cp "$GITHUB_WORKSPACE/.config" .config
 
       - name: Finalize config
         run: |
           cd "$IMMORTAL_DIR"
           make defconfig
-
           echo "==== Rootfs config check ===="
           grep CONFIG_TARGET_ROOTFS .config || true
 
-      - name: Compile rootfs
+      - name: Compile LXC rootfs
         run: |
           cd "$IMMORTAL_DIR"
-          make -j$(nproc) world
+          make -j$(nproc) target-image || tail -n 50 log
 
       - name: Verify LXC rootfs
         run: |
@@ -82,7 +81,12 @@ jobs:
             echo "❌ 未生成 rootfs.tar.gz"
             exit 1
           fi
-            echo "ROOTFS=$TAR" >> $GITHUB_ENV
+          echo "ROOTFS=$TAR" >> $GITHUB_ENV
+
+      - name: Clean up build_dir to save space
+        run: |
+          cd "$IMMORTAL_DIR"
+          rm -rf build_dir tmp
 
       - name: Delete old releases
         uses: dev-drprasad/delete-older-releases@v0.3.4
