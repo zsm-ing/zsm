@@ -91,7 +91,7 @@ jobs:
             immortal-src/bin/targets/x86/64/packages
 
       - name: Upload rootfs template
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: openwrt-proxmox-rootfs
           path: |
