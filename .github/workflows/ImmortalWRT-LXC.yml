@@ -66,7 +66,10 @@ jobs:
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
           cd $IMMORTAL_DIR
-          test -f $GITHUB_WORKSPACE/.config || { echo "❌ 仓库中未找到 .config"; exit 1; }
+          test -f $GITHUB_WORKSPACE/.config || {
+            echo "❌ 仓库中未找到 .config"
+            exit 1
+          }
           cp $GITHUB_WORKSPACE/.config .config
 
       - name: Defconfig (lock config)
@@ -74,22 +77,23 @@ jobs:
           cd $IMMORTAL_DIR
           make defconfig
           echo "===== TARGET CHECK ====="
-          grep -E "CONFIG_TARGET|CONFIG_PACKAGE_lxc" .config || true
+          grep -E "CONFIG_TARGET_x86_64|CONFIG_TARGET_ROOTFS_TARGZ" .config
 
       - name: Apply DIY customizations
         run: |
-           cd $IMMORTAL_DIR
-           test -f $GITHUB_WORKSPACE/diy.sh || {
-             echo "❌ 未找到 diy.sh"; exit 1;
-           }
-           cp $GITHUB_WORKSPACE/diy.sh .
-           chmod +x diy.sh
-           ./diy.sh
-      
-      - name: Compile rootfs (LXC)
+          cd $IMMORTAL_DIR
+          test -f $GITHUB_WORKSPACE/diy.sh || {
+            echo "❌ 未找到 diy.sh"
+            exit 1
+          }
+          cp $GITHUB_WORKSPACE/diy.sh .
+          chmod +x diy.sh
+          ./diy.sh
+
+      - name: Compile world (LXC rootfs)
         run: |
           cd $IMMORTAL_DIR
-          make -j$(nproc) target/install V=s > build.log 2>&1 || {
+          make -j$(nproc) world V=s > build.log 2>&1 || {
             echo "❌ 编译失败，最后 100 行日志："
             tail -n 100 build.log
             exit 1
@@ -98,8 +102,12 @@ jobs:
       - name: Collect rootfs
         run: |
           cd $IMMORTAL_DIR
+          find bin/targets -type f
           ROOTFS=$(find bin/targets -name "*rootfs.tar.gz" | head -n1)
-          [ -n "$ROOTFS" ] || { echo "❌ 未生成 rootfs"; exit 1; }
+          [ -n "$ROOTFS" ] || {
+            echo "❌ 未生成 rootfs.tar.gz"
+            exit 1
+          }
           echo "ROOTFS=$ROOTFS" >> $GITHUB_ENV
 
       - name: Set release metadata
