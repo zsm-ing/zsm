@@ -63,7 +63,6 @@ jobs:
           test -f $GITHUB_WORKSPACE/.config || { echo "❌ .config 不存在"; exit 1; }
           cp $GITHUB_WORKSPACE/.config .config
 
-      # ===== 方法 3：feeds → defconfig → world =====
       - name: Update feeds & defconfig
         run: |
           cd $IMMORTAL_DIR
@@ -94,26 +93,26 @@ jobs:
           echo "IMMORTAL_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
-      - name: Delete old releases
-        uses: dev-drprasad/delete-older-releases@v0.3.4
-        with:
-          keep_latest: 1
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Release LXC rootfs
+      - name: Release LXC rootfs & firmware
         uses: softprops/action-gh-release@v2
         with:
           tag_name: immortalwrt-lxc-${{ env.IMMORTAL_VERSION }}-${{ env.BUILD_DATE }}
-          name: ImmortalWRT LXC Rootfs
+          name: ImmortalWRT LXC Rootfs & Firmware
           body: |
-            自动构建的 ImmortalWRT LXC rootfs
+            自动构建的 ImmortalWRT
 
-            Commit: ${{ env.IMMORTAL_COMMIT }}
-            Version: ${{ env.IMMORTAL_VERSION }}
-            Date: ${{ env.BUILD_DATE }}
-          files: ${{ env.ROOTFS }}
+          Commit: ${{ env.IMMORTAL_COMMIT }}
+          Version: ${{ env.IMMORTAL_VERSION }}
+          Date: ${{ env.BUILD_DATE }}
+
+           包含内容：
+           - LXC rootfs (rootfs.tar.gz)
+           - x86 固件镜像（sysupgrade / ext4 / squashfs）
+          files: |
+           immortalwrt/bin/targets/**/sha256sums
+           immortalwrt/bin/targets/**/*rootfs.tar.gz
+           immortalwrt/bin/targets/**/*.img*
+           immortalwrt/bin/targets/**/*.bin
           overwrite_files: true
           make_latest: true
         env:
