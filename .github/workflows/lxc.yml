@@ -35,8 +35,9 @@ jobs:
             libncurses5-dev libncursesw5-dev zlib1g-dev \
             libssl-dev wget unzip python3 python3-setuptools \
             rsync subversion file bc tar ccache
-          ccache -M 5G
           echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> $GITHUB_ENV
+          ccache -M 5G
+          ccache -s
 
       - name: Clone ImmortalWRT
         run: |
@@ -51,29 +52,38 @@ jobs:
             immortalwrt/dl
             immortalwrt/build_dir
             immortalwrt/staging_dir
-            immortalwrt/feeds
-          key: immortalwrt-${{ github.sha }}
+          key: immortalwrt-${{ runner.os }}-${{ hashFiles('.config') }}
           restore-keys: |
-            immortalwrt-
+            immortalwrt-${{ runner.os }}-
 
-      - name: Apply custom config
-        if: ${{ github.event.inputs.use-local-config == 'yes' }}
-        run: |
-          cd $IMMORTAL_DIR
-          test -f $GITHUB_WORKSPACE/.config || { echo "❌ .config 不存在"; exit 1; }
-          cp $GITHUB_WORKSPACE/.config .config
-
-      - name: Update feeds & defconfig
+      # ✅ 关键点 1：先 feeds
+      - name: Update & install feeds
         run: |
           cd $IMMORTAL_DIR
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          make defconfig
 
-      - name: Compile world (LXC rootfs)
+      # ✅ 关键点 2：feeds 之后再放 .config
+      - name: Apply custom .config
+        if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
           cd $IMMORTAL_DIR
-          make -j$(nproc) world V=s > build.log 2>&1 || {
+          test -f $GITHUB_WORKSPACE/.config || { echo "❌ 仓库中未找到 .config"; exit 1; }
+          cp $GITHUB_WORKSPACE/.config .config
+
+      # ✅ 关键点 3：只在此时 defconfig
+      - name: Defconfig (lock config)
+        run: |
+          cd $IMMORTAL_DIR
+          make defconfig
+          echo "===== TARGET CHECK ====="
+          grep -E "CONFIG_TARGET|CONFIG_PACKAGE_lxc" .config || true
+
+      # （可选）只编 rootfs，比 world 快很多
+      - name: Compile rootfs (LXC)
+        run: |
+          cd $IMMORTAL_DIR
+          make -j$(nproc) rootfs V=s > build.log 2>&1 || {
             echo "❌ 编译失败，最后 100 行日志："
             tail -n 100 build.log
             exit 1
@@ -93,26 +103,21 @@ jobs:
           echo "IMMORTAL_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
-      - name: Release LXC rootfs & firmware
+      - name: Release LXC rootfs
         uses: softprops/action-gh-release@v2
         with:
           tag_name: immortalwrt-lxc-${{ env.IMMORTAL_VERSION }}-${{ env.BUILD_DATE }}
-          name: ImmortalWRT LXC Rootfs & Firmware
+          name: ImmortalWRT LXC Rootfs
           body: |
-            自动构建的 ImmortalWRT
+            自动构建的 ImmortalWRT LXC Rootfs
 
-          Commit: ${{ env.IMMORTAL_COMMIT }}
-          Version: ${{ env.IMMORTAL_VERSION }}
-          Date: ${{ env.BUILD_DATE }}
+            Commit: ${{ env.IMMORTAL_COMMIT }}
+            Version: ${{ env.IMMORTAL_VERSION }}
+            Date: ${{ env.BUILD_DATE }}
 
-           包含内容：
-           - LXC rootfs (rootfs.tar.gz)
-           - x86 固件镜像（sysupgrade / ext4 / squashfs）
           files: |
-           immortalwrt/bin/targets/**/sha256sums
-           immortalwrt/bin/targets/**/*rootfs.tar.gz
-           immortalwrt/bin/targets/**/*.img*
-           immortalwrt/bin/targets/**/*.bin
+            immortalwrt/bin/targets/**/sha256sums
+            immortalwrt/bin/targets/**/*rootfs.tar.gz
           overwrite_files: true
           make_latest: true
         env:
