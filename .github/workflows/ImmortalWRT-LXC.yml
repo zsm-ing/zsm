@@ -89,7 +89,7 @@ jobs:
       - name: Compile rootfs (LXC)
         run: |
           cd $IMMORTAL_DIR
-          make -j$(nproc) rootfs V=s > build.log 2>&1 || {
+          make -j$(nproc) target/install V=s > build.log 2>&1 || {
             echo "❌ 编译失败，最后 100 行日志："
             tail -n 100 build.log
             exit 1
