@@ -56,14 +56,12 @@ jobs:
           restore-keys: |
             immortalwrt-${{ runner.os }}-
 
-      # ✅ 关键点 1：先 feeds
       - name: Update & install feeds
         run: |
           cd $IMMORTAL_DIR
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ✅ 关键点 2：feeds 之后再放 .config
       - name: Apply custom .config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
@@ -71,7 +69,6 @@ jobs:
           test -f $GITHUB_WORKSPACE/.config || { echo "❌ 仓库中未找到 .config"; exit 1; }
           cp $GITHUB_WORKSPACE/.config .config
 
-      # ✅ 关键点 3：只在此时 defconfig
       - name: Defconfig (lock config)
         run: |
           cd $IMMORTAL_DIR
@@ -79,7 +76,16 @@ jobs:
           echo "===== TARGET CHECK ====="
           grep -E "CONFIG_TARGET|CONFIG_PACKAGE_lxc" .config || true
 
-      # （可选）只编 rootfs，比 world 快很多
+      - name: Apply DIY customizations
+        run: |
+           cd $IMMORTAL_DIR
+           test -f $GITHUB_WORKSPACE/diy.sh || {
+             echo "❌ 未找到 diy.sh"; exit 1;
+           }
+           cp $GITHUB_WORKSPACE/diy.sh .
+           chmod +x diy.sh
+           ./diy.sh
+      
       - name: Compile rootfs (LXC)
         run: |
           cd $IMMORTAL_DIR
