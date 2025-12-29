@@ -2,8 +2,12 @@ name: Cleanup old workflow runs
 
 on:
   schedule:
-    - cron: "0 3 * * *"  # 每天执行
+    - cron: "0 3 * * *"
   workflow_dispatch:
+
+permissions:
+  actions: write      # ⭐ 必须
+  contents: read      # 推荐加上
 
 jobs:
   cleanup:
