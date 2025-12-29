@@ -49,17 +49,18 @@ jobs:
 
       - name: Clone OpenWrt / ImmortalWRT
         run: |
+          mkdir -p src
           if [ "${{ github.event.inputs.source }}" = "openwrt" ]; then
             echo "👉 使用 OpenWrt 官方 25.12"
             git clone --depth=50 --branch openwrt-25.12 \
-              https://github.com/openwrt/openwrt.git openwrt
-            echo "WRT_DIR=$GITHUB_WORKSPACE/openwrt" >> $GITHUB_ENV
+              https://github.com/openwrt/openwrt.git src/openwrt
+            echo "WRT_DIR=$GITHUB_WORKSPACE/src/openwrt" >> $GITHUB_ENV
             echo "WRT_NAME=OpenWrt" >> $GITHUB_ENV
           else
             echo "👉 使用 ImmortalWRT 25.12"
             git clone --depth=50 --branch openwrt-25.12 \
-              https://github.com/immortalwrt/immortalwrt.git immortalwrt
-            echo "WRT_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+              https://github.com/immortalwrt/immortalwrt.git src/immortalwrt
+            echo "WRT_DIR=$GITHUB_WORKSPACE/src/immortalwrt" >> $GITHUB_ENV
             echo "WRT_NAME=ImmortalWRT" >> $GITHUB_ENV
           fi
 
