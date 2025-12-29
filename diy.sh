@@ -10,14 +10,13 @@ cat > files/etc/uci-defaults/99-network << 'EOF'
 uci batch << EOT
 # LAN 基本信息
 set network.lan.proto='static'
-set network.lan.ipaddr='10.10.10.250'
+set network.lan.ipaddr='10.10.10.252'
 set network.lan.netmask='255.255.255.0'
 set network.lan.gateway='10.10.10.253'
 
 # DNS
 del network.lan.dns
 add_list network.lan.dns='223.5.5.5'
-add_list network.lan.dns='8.8.8.8'
 
 commit network
 EOT
