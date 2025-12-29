@@ -1,8 +1,16 @@
-name: Build ImmortalWRT LXC Rootfs
+name: Build OpenWrt / ImmortalWRT 25.12 LXC Rootfs
 
 on:
   workflow_dispatch:
     inputs:
+      source:
+        description: '选择源码'
+        required: true
+        default: 'immortalwrt'
+        type: choice
+        options:
+          - immortalwrt
+          - openwrt
       use-local-config:
         description: '使用仓库中的 .config？'
         required: true
@@ -12,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: immortalwrt-lxc
+  group: wrt-lxc
   cancel-in-progress: true
 
 jobs:
@@ -39,33 +47,43 @@ jobs:
           ccache -M 5G
           ccache -s
 
-      - name: Clone ImmortalWRT
+      - name: Clone OpenWrt / ImmortalWRT
         run: |
-          git clone --depth=50 --branch openwrt-25.12 \
-            https://github.com/immortalwrt/immortalwrt.git immortalwrt
-          echo "IMMORTAL_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+          if [ "${{ github.event.inputs.source }}" = "openwrt" ]; then
+            echo "👉 使用 OpenWrt 官方 25.12"
+            git clone --depth=50 --branch openwrt-25.12 \
+              https://github.com/openwrt/openwrt.git openwrt
+            echo "WRT_DIR=$GITHUB_WORKSPACE/openwrt" >> $GITHUB_ENV
+            echo "WRT_NAME=OpenWrt" >> $GITHUB_ENV
+          else
+            echo "👉 使用 ImmortalWRT 25.12"
+            git clone --depth=50 --branch openwrt-25.12 \
+              https://github.com/immortalwrt/immortalwrt.git immortalwrt
+            echo "WRT_DIR=$GITHUB_WORKSPACE/immortalwrt" >> $GITHUB_ENV
+            echo "WRT_NAME=ImmortalWRT" >> $GITHUB_ENV
+          fi
 
       - name: Restore build cache
         uses: actions/cache@v3
         with:
           path: |
-            immortalwrt/dl
-            immortalwrt/build_dir
-            immortalwrt/staging_dir
-          key: immortalwrt-${{ runner.os }}-${{ hashFiles('.config') }}
+            ${{ env.WRT_DIR }}/dl
+            ${{ env.WRT_DIR }}/build_dir
+            ${{ env.WRT_DIR }}/staging_dir
+          key: wrt-${{ github.event.inputs.source }}-${{ runner.os }}-${{ hashFiles('.config') }}
           restore-keys: |
-            immortalwrt-${{ runner.os }}-
+            wrt-${{ github.event.inputs.source }}-${{ runner.os }}-
 
       - name: Update & install feeds
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: Apply custom .config
         if: ${{ github.event.inputs.use-local-config == 'yes' }}
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           test -f $GITHUB_WORKSPACE/.config || {
             echo "❌ 仓库中未找到 .config"
             exit 1
@@ -74,14 +92,14 @@ jobs:
 
       - name: Defconfig (lock config)
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           make defconfig
           echo "===== TARGET CHECK ====="
           grep -E "CONFIG_TARGET_x86_64|CONFIG_TARGET_ROOTFS_TARGZ" .config
 
       - name: Apply DIY customizations
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           test -f $GITHUB_WORKSPACE/diy.sh || {
             echo "❌ 未找到 diy.sh"
             exit 1
@@ -92,7 +110,7 @@ jobs:
 
       - name: Compile world (LXC rootfs)
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           make -j$(nproc) world V=s > build.log 2>&1 || {
             echo "❌ 编译失败，最后 100 行日志："
             tail -n 100 build.log
@@ -101,7 +119,7 @@ jobs:
 
       - name: Collect rootfs
         run: |
-          cd $IMMORTAL_DIR
+          cd $WRT_DIR
           find bin/targets -type f
           ROOTFS=$(find bin/targets -name "*rootfs.tar.gz" | head -n1)
           [ -n "$ROOTFS" ] || {
@@ -112,26 +130,27 @@ jobs:
 
       - name: Set release metadata
         run: |
-          cd $IMMORTAL_DIR
-          echo "IMMORTAL_COMMIT=$(git log -1 --format=%h)" >> $GITHUB_ENV
-          echo "IMMORTAL_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
+          cd $WRT_DIR
+          echo "WRT_COMMIT=$(git log -1 --format=%h)" >> $GITHUB_ENV
+          echo "WRT_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
       - name: Release LXC rootfs
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: immortalwrt-lxc-${{ env.IMMORTAL_VERSION }}-${{ env.BUILD_DATE }}
-          name: ImmortalWRT LXC Rootfs
+          tag_name: ${{ env.WRT_NAME }}-lxc-${{ env.WRT_VERSION }}-${{ env.BUILD_DATE }}
+          name: ${{ env.WRT_NAME }} 25.12 LXC Rootfs
           body: |
-            自动构建的 ImmortalWRT LXC Rootfs
+            自动构建的 ${{ env.WRT_NAME }} 25.12 LXC Rootfs
 
-            Commit: ${{ env.IMMORTAL_COMMIT }}
-            Version: ${{ env.IMMORTAL_VERSION }}
+            Source: ${{ github.event.inputs.source }}
+            Commit: ${{ env.WRT_COMMIT }}
+            Version: ${{ env.WRT_VERSION }}
             Date: ${{ env.BUILD_DATE }}
 
           files: |
-            immortalwrt/bin/targets/**/sha256sums
-            immortalwrt/bin/targets/**/*rootfs.tar.gz
+            ${{ env.WRT_DIR }}/bin/targets/**/sha256sums
+            ${{ env.WRT_DIR }}/bin/targets/**/*rootfs.tar.gz
           overwrite_files: true
           make_latest: true
         env:
