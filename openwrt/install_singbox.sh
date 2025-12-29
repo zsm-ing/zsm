@@ -9,9 +9,9 @@ if command -v sing-box &> /dev/null; then
     echo -e "${CYAN}sing-box 已安装，跳过安装步骤${NC}"
 else
     echo "正在更新包列表并安装 sing-box,请稍候..."
-    opkg update >/dev/null 2>&1
-    opkg install kmod-nft-tproxy >/dev/null 2>&1
-    opkg install sing-box >/dev/null 2>&1
+    apk update >/dev/null 2>&1
+    apk install kmod-nft-tproxy >/dev/null 2>&1
+    apk install sing-box >/dev/null 2>&1
 
     if command -v sing-box &> /dev/null; then
         echo -e "${CYAN}sing-box 安装成功${NC}"
