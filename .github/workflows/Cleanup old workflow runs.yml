@@ -21,7 +21,7 @@ jobs:
               }
             )
 
-            const keep = 30
+            const keep = 5
             for (const run of runs.slice(keep)) {
               await github.rest.actions.deleteWorkflowRun({
                 owner: context.repo.owner,
