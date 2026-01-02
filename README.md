@@ -64,3 +64,4 @@ reload() {
     start-stop-daemon --signal HUP --pidfile /run/sing-box.pid
     eend $?
 }
+```
