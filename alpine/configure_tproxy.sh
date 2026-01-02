@@ -103,5 +103,5 @@ EOF
 
     echo "✅ TProxy 模式的防火墙规则已应用"
 else
-    echo "ℹ️ 当前模式为 TUN 模式，不需要应用防火墙规则"
+     echo "当前模式为 TUN 模式，不需要应用防火墙规则。" >/dev/null 2>&1
 fi
