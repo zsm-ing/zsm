@@ -164,8 +164,8 @@ handle_choice() {
         1) bash "$SCRIPT_DIR/switch_mode.sh"; bash "$SCRIPT_DIR/manual_input.sh"; rc-service sing-box restart ;;
         2) bash "$SCRIPT_DIR/manual_update.sh" ;;
         3) bash "$SCRIPT_DIR/auto_update.sh" ;;
-        4) rc-service sing-box start ;;
-        5) rc-service sing-box stop ;;
+        4) bash "$SCRIPT_DIR/start_singbox.sh" ;;
+        5) bash "$SCRIPT_DIR/stop_singbox.sh" ;;
         6) bash "$SCRIPT_DIR/set_defaults.sh" ;;
         7) bash "$SCRIPT_DIR/manage_autostart.sh" ;;
         8) bash "$SCRIPT_DIR/commands.sh" ;;
