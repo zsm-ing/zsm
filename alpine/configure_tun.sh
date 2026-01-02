@@ -38,6 +38,18 @@ table inet sing-box {
         type filter hook output priority 0; policy accept;
     }
 }
+
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy accept;
+    }
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+    }
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}
 EOF
 
     # 应用防火墙规则
