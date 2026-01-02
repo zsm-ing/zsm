@@ -2,33 +2,48 @@
 
 #################################################
 # 描述: Alpine 下 sing-box 安装与服务管理脚本
-# 版本: 1.0.0
+# 版本: 1.1.0
 #################################################
 
-# 定义颜色
 CYAN='\033[0;36m'
 RED='\033[0;31m'
-NC='\033[0m' # 无颜色
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+BIN_PATH="/usr/bin/sing-box"
+SERVICE_FILE="/etc/init.d/sing-box"
 
 # 检查是否已安装 sing-box
 if command -v sing-box &> /dev/null; then
     echo -e "${CYAN}sing-box 已安装，跳过安装步骤${NC}"
 else
-    echo "正在更新包列表并安装 sing-box，请稍候..."
-    apk update >/dev/null 2>&1
-    apk add sing-box nftables >/dev/null 2>&1
+    echo "正在下载并安装 sing-box，请稍候..."
+
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64) ARCH_NAME="amd64" ;;
+        aarch64) ARCH_NAME="arm64" ;;
+        armv7l|armv7*) ARCH_NAME="armv7" ;;
+        *) echo -e "${RED}不支持的架构: $ARCH${NC}"; exit 1 ;;
+    esac
+
+    TMP_DIR="/tmp/singbox_install"
+    mkdir -p "$TMP_DIR"
+    wget -q -O "$TMP_DIR/sing-box.tar.gz" "https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-$ARCH_NAME.tar.gz"
+    tar -xzf "$TMP_DIR/sing-box.tar.gz" -C "$TMP_DIR"
+    mv "$TMP_DIR"/sing-box*/sing-box "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    rm -rf "$TMP_DIR"
 
     if command -v sing-box &> /dev/null; then
-        echo -e "${CYAN}sing-box 安装成功${NC}"
+        echo -e "${GREEN}sing-box 安装成功${NC}"
     else
-        echo -e "${RED}sing-box 安装失败，请检查日志或网络配置${NC}"
+        echo -e "${RED}sing-box 安装失败，请检查网络或架构${NC}"
         exit 1
     fi
 fi
 
 # 创建 openrc 服务脚本
-SERVICE_FILE="/etc/init.d/sing-box"
-
 cat > "$SERVICE_FILE" << 'EOF'
 #!/sbin/openrc-run
 
@@ -44,10 +59,7 @@ depend() {
 }
 
 start_pre() {
-    # 等待服务完全启动
     sleep 3
-
-    # 读取模式并应用防火墙规则
     MODE=$(grep -oE '^MODE=.*' /etc/sing-box/mode.conf | cut -d'=' -f2)
     if [ "$MODE" = "TProxy" ]; then
         /etc/sing-box/scripts/configure_tproxy.sh
@@ -63,4 +75,4 @@ chmod +x "$SERVICE_FILE"
 rc-update add sing-box default
 rc-service sing-box start
 
-echo -e "${CYAN}sing-box 服务已启用并启动${NC}"
+echo -e "${CYAN}✅ sing-box 服务已启用并启动${NC}"
