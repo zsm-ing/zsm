@@ -33,9 +33,12 @@ table inet filter {
 EOF
 
     # 应用防火墙规则
-    rc-service nftables restart
+    nft -f /etc/sing-box/tun/nftables.conf
+
+    # 持久化防火墙规则
+    nft list ruleset > /etc/nftables.conf
 
     echo "✅ TUN 模式的防火墙规则已应用（全部放行）"
 else
-    echo "ℹ️ 当前模式不是 TUN 模式，跳过防火墙规则配置"
+    echo "当前模式不是 TUN 模式，跳过防火墙规则配置。" >/dev/null 2>&1
 fi
