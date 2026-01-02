@@ -189,7 +189,7 @@ update_ui() {
         fi
 
         case "$choice" in
-            1) install_default_ui; exit 0 ;;
+            1) install_default_ui ;;
             2)
                 echo -e "${CYAN}请选择面板：${NC}"
                 echo "1. zashboard"
@@ -202,3 +202,7 @@ update_ui() {
                     3) install_selected_ui "$YACD_URL" ;;
                     *) echo -e "${RED}无效选项${NC}" ;;
                 esac
+                ;;
+            3) check_ui ;;
+            4) setup_auto_update_ui ;;
+            *) echo -e "${RED}无效选项
