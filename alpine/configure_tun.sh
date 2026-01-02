@@ -25,7 +25,7 @@ if [ "$MODE" = "TUN" ]; then
     # 确保目录存在
     mkdir -p /etc/sing-box/tun
 
-    # 设置 TUN 模式的具体配置
+    # 设置 TUN 模式的具体配置（全部放行）
     cat > /etc/sing-box/tun/nftables.conf <<EOF
 table inet sing-box {
     chain input {
@@ -43,7 +43,7 @@ EOF
     # 应用防火墙规则
     nft -f /etc/sing-box/tun/nftables.conf
     if [ $? -eq 0 ]; then
-        echo "✅ TUN 模式防火墙规则已应用"
+        echo "✅ TUN 模式防火墙规则已应用（全部放行）"
     else
         echo "❌ 应用 TUN 模式防火墙规则失败，请检查配置"
         exit 1
