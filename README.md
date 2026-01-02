@@ -28,12 +28,6 @@ bash <(curl -sL https://gh-proxy.com/https://raw.githubusercontent.com/zsm-ing/z
 ### 1️⃣ 下载 GitHub Actions 构建产物
 
 ```bash
-chmod +x caddy-alpine-amd64
-./caddy-alpine-amd64 version
-
-
-
-
 #!/sbin/openrc-run
 
 name="sing-box"
