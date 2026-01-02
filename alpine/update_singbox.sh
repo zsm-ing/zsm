@@ -93,28 +93,36 @@ install_version() {
     releases="$2"
     [ -z "$ver" ] && return 1
 
-    expected="sing-box-$ver-linux-$ARCH-musl.tar.gz"
+    # 两种可能的命名方式
+    candidates="
+sing-box-$ver-linux-$ARCH-musl.tar.gz
+sing-box-$ver-linux-$ARCH.tar.gz
+"
+
     bin_url=""
 
     echo "$releases" | jq -r '.[] | .assets[] | "\(.name) \(.browser_download_url)"' |
     while read -r name url; do
-        [ "$name" = "$expected" ] || continue
-        bin_url="$url"
-        echo "$bin_url" > /tmp/sb_url
-        break
+        for expected in $candidates; do
+            if [ "$name" = "$expected" ]; then
+                bin_url="$url"
+                echo "$bin_url" > /tmp/sb_url
+                break 2
+            fi
+        done
     done
 
     [ -f /tmp/sb_url ] && bin_url=$(cat /tmp/sb_url) && rm -f /tmp/sb_url
 
     if [ -z "$bin_url" ]; then
-        echo -e "${RED}未找到 $expected${NC}"
+        echo -e "${RED}未找到匹配的 release 资产${NC}"
         return 1
     fi
 
     [ -d "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
     mkdir -p "$TEMP_DIR"
 
-    echo -e "${CYAN}下载 $expected${NC}"
+    echo -e "${CYAN}下载 $bin_url${NC}"
     download_asset "$bin_url" "$TEMP_DIR/sing-box.tar.gz" || return 1
 
     echo -e "${CYAN}解压文件${NC}"
