@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################
-# 描述: Alpine 下 sing-box 安装与服务管理脚本
-# 版本: 2.0.0
+# 描述: Alpine 下 sing-box 安装与服务管理脚本（使用 edge 仓库源）
+# 版本: 2.2.0
 #################################################
 
 CYAN='\033[0;36m'
@@ -16,46 +16,19 @@ SERVICE_FILE="/etc/init.d/sing-box"
 if command -v sing-box &> /dev/null; then
     echo -e "${CYAN}sing-box 已安装，跳过安装步骤${NC}"
 else
-    echo "正在下载并安装 sing-box，请稍候..."
+    echo "正在更新包列表并安装 sing-box，请稍候..."
 
-    ARCH=$(uname -m)
-    case "$ARCH" in
-        x86_64) ARCH_NAME="amd64" ;;
-        aarch64) ARCH_NAME="arm64" ;;
-        armv7l|armv7*) ARCH_NAME="armv7" ;;
-        *) echo -e "${RED}不支持的架构: $ARCH${NC}"; exit 1 ;;
-    esac
+    # 使用 edge/community 仓库源安装
+    apk update \
+      --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main \
+      --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
 
-    TMP_DIR="/tmp/singbox_install"
-    mkdir -p "$TMP_DIR"
-
-    # 下载最新版本的 tar 包
-    DOWNLOAD_URL="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-$ARCH_NAME.tar.gz"
-    wget -q -O "$TMP_DIR/sing-box.tar.gz" "$DOWNLOAD_URL"
-
-    if [ ! -s "$TMP_DIR/sing-box.tar.gz" ]; then
-        echo -e "${RED}下载失败，请检查网络或代理${NC}"
-        exit 1
-    fi
-
-    # 解压缩
-    tar -xzf "$TMP_DIR/sing-box.tar.gz" -C "$TMP_DIR" || { echo -e "${RED}解压失败${NC}"; exit 1; }
-
-    # 查找二进制文件
-    bin_file=$(find "$TMP_DIR" -type f -name sing-box | head -n1)
-    if [ -z "$bin_file" ]; then
-        echo -e "${RED}未找到 sing-box 可执行文件，请检查下载包${NC}"
-        exit 1
-    fi
-
-    mv "$bin_file" "$BIN_PATH"
-    chmod +x "$BIN_PATH"
-    rm -rf "$TMP_DIR"
+    apk add sing-box nftables
 
     if command -v sing-box &> /dev/null; then
         echo -e "${GREEN}sing-box 安装成功${NC}"
     else
-        echo -e "${RED}sing-box 安装失败，请检查日志或架构${NC}"
+        echo -e "${RED}sing-box 安装失败，请检查仓库源或网络${NC}"
         exit 1
     fi
 fi
