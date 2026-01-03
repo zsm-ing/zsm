@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 3.3.3
+# 版本: 1.1.1
 #################################################
 
 # 定义颜色
@@ -142,28 +142,36 @@ if [ ! -f /usr/bin/sb ]; then
     chmod +x /usr/bin/sb
 fi
 
-show_singbox_status() {
-    echo "=== SingBox 进程状态 ==="
-    if pgrep -x singbox >/dev/null; then
-        ps -o pid,user,%cpu,%mem,cmd -C singbox
+show_singbox_status_simple() {
+    echo "=== SingBox 状态 ==="
+    if pgrep -f sing-box >/dev/null 2>&1; then
         echo "[OK] SingBox 正在运行"
     else
         echo "[WARN] SingBox 未运行"
     fi
 
     echo
-    echo "=== 系统资源占用 ==="
-    echo "- CPU/负载:"
-    uptime
-    echo
-    echo "- 内存使用:"
-    free -h
-    echo
-    echo "- 磁盘使用:"
-    df -h | grep -E '^/dev/'
-    echo
-    echo "- 网络流量 (eth0):"
-    ip -s link show eth0 | head -n 10
+    echo "=== 系统资源 ==="
+    # CPU 负载
+    load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/ //g')
+    echo "CPU 负载: $load"
+
+    # 内存使用
+    mem_used=$(free -h | awk '/Mem:/ {print $3}')
+    mem_total=$(free -h | awk '/Mem:/ {print $2}')
+    echo "内存使用: $mem_used / $mem_total"
+
+    # 磁盘使用
+    disk_used=$(df -h / | awk 'NR==2 {print $3}')
+    disk_total=$(df -h / | awk 'NR==2 {print $2}')
+    echo "磁盘使用: $disk_used / $disk_total"
+
+    # eth0 网络流量
+    if [ -d /sys/class/net/eth0/statistics ]; then
+        RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
+        TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+        echo "eth0 网络流量: 接收 $RX bytes, 发送 $TX bytes"
+    fi
 }
 
 show_menu() {
