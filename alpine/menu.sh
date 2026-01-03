@@ -38,6 +38,7 @@ SCRIPTS=(
     "clean_nft.sh"             # 清理 nftables 规则
     "set_defaults.sh"          # 设置默认配置
     "commands.sh"              # 常用命令
+    "network.sh"               # 网络设置
     "switch_mode.sh"           # 切换代理模式
     "manage_autostart.sh"      # 设置自启动
     "check_config.sh"          # 检查配置文件
@@ -154,6 +155,7 @@ show_menu() {
     echo -e "${GREEN}9. 更新脚本${NC}"
     echo -e "${GREEN}10. 更新面板${NC}"
     echo -e "${GREEN}11. 更新 sing-box${NC}"
+    echo -e "${GREEN}12. 网络设置${NC}"
     echo -e "${GREEN}0. 退出${NC}"
     echo -e "${CYAN}=======================================${NC}"
 }
@@ -172,6 +174,7 @@ handle_choice() {
         9) bash "$SCRIPT_DIR/update_scripts.sh" ;;
         10) bash "$SCRIPT_DIR/update_ui.sh" ;;
         11) bash "$SCRIPT_DIR/update_singbox.sh" ;;
+        12) bash "$SCRIPT_DIR/network.sh ;;
         0) exit 0 ;;
         *) echo -e "${RED}无效的选择${NC}" ;;
     esac
