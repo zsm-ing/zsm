@@ -46,8 +46,8 @@ restart_net() {
 
 # ------------------接口选择------------------
 select_iface() {
-    # 列出所有非 lo 接口（包括带 @ 的接口名）
-    IFACES=$(ip -o link show | awk -F: '$2 !~ /lo/{print $2}' | tr -d ' ')
+    # 获取所有非 lo 接口，保留 @ 符号
+    IFACES=$(ip -o link show | awk -F: '$2 !~ /lo/ {gsub(/^ +| +$/,"",$2); print $2}')
     count=1
     echo "请选择网络接口："
     for i in $IFACES; do
