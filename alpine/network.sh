@@ -1,7 +1,4 @@
 #!/bin/sh
-# Alpine LXC 网络管理菜单脚本（接口选择修复版）
-# 支持接口选择、IPv4/IPv6/DNS/固定本地 IPv6
-# Author: zsm
 
 CONF="/etc/network/interfaces"
 RESOLV="/etc/resolv.conf"
@@ -9,6 +6,15 @@ RESOLV="/etc/resolv.conf"
 pause() {
     echo
     read -p "按回车继续..."
+}
+
+read_val() {
+    while :; do
+        read -p "$1: " val
+        [ -n "$val" ] && break
+        echo "不能为空，请重新输入"
+    done
+    echo "$val"
 }
 
 status() {
@@ -22,133 +28,70 @@ status() {
     ip -6 r
 }
 
-read_val() {
-    while :; do
-        read -p "$1: " val
-        [ -n "$val" ] && break
-        echo "不能为空，请重新输入"
-    done
-    echo "$val"
-}
-
-write_lo() {
-    cat > "$CONF" <<EOF
-auto lo
-iface lo inet loopback
-
-EOF
-}
-
 restart_net() {
     rc-service networking restart
     echo "[OK] 网络服务已重启"
-}
-
-# ------------------接口选择------------------
-select_iface() {
-    # 获取所有非 lo 接口，保留 @ 符号
-    IFACES=$(ip -o link show | awk -F: '$2 !~ /lo/ {gsub(/^ +| +$/,"",$2); print $2}')
-    count=1
-    echo "请选择网络接口："
-    for i in $IFACES; do
-        echo "  $count) $i"
-        count=$((count + 1))
-    done
-
-    if [ -z "$IFACES" ]; then
-        echo "未检测到任何网络接口！"
-        exit 1
-    fi
-
-    while :; do
-        read -p "输入编号: " choice
-        if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -lt "$count" ] 2>/dev/null; then
-            index=1
-            for iface in $IFACES; do
-                if [ "$index" -eq "$choice" ]; then
-                    echo "$iface"
-                    return
-                fi
-                index=$((index + 1))
-            done
-        fi
-        echo "输入无效，请重新选择编号"
-    done
 }
 
 # ------------------配置函数------------------
 
 # IPv4 DHCP + IPv6 SLAAC
 set_dhcp() {
-    IFACE=$(select_iface)
-    write_lo
-    cat >> "$CONF" <<EOF
-auto $IFACE
-iface $IFACE inet dhcp
-iface $IFACE inet6 auto
+    # 保留 lo 段
+    grep -A 10 "^auto lo" "$CONF" > "$CONF.tmp" 2>/dev/null
+
+    # 覆盖 eth0 配置
+    cat >> "$CONF.tmp" <<EOF
+auto eth0
+iface eth0 inet dhcp
+iface eth0 inet6 auto
 EOF
-    echo "[OK] 已写入 DHCP + SLAAC 配置"
+
+    mv "$CONF.tmp" "$CONF"
+    echo "[OK] 已写入 eth0 DHCP + SLAAC 配置"
 }
 
-# IPv4 静态
+# IPv4 静态 + IPv6 自动
 set_static4() {
-    IFACE=$(select_iface)
-    IP=$(read_val "IPv4 地址")
-    MASK=$(read_val "子网掩码")
-    GW=$(read_val "IPv4 网关")
+    IP=$(read_val "IPv4 地址 (如 10.10.10.252/24)")
+    GW=$(read_val "IPv4 网关 (如 10.10.10.253)")
 
-    write_lo
-    cat >> "$CONF" <<EOF
-auto $IFACE
-iface $IFACE inet static
-    address $IP
-    netmask $MASK
-    gateway $GW
+    # 保留 lo 段
+    grep -A 10 "^auto lo" "$CONF" > "$CONF.tmp" 2>/dev/null
 
-iface $IFACE inet6 auto
+    cat >> "$CONF.tmp" <<EOF
+auto eth0
+iface eth0 inet static
+        address $IP
+        gateway $GW
+iface eth0 inet6 auto
 EOF
-    echo "[OK] 已写入 IPv4 静态配置"
+
+    mv "$CONF.tmp" "$CONF"
+    echo "[OK] 已写入 eth0 静态 IPv4 配置 + IPv6 自动"
 }
 
 # IPv6 静态
 set_static6() {
-    IFACE=$(select_iface)
-    IP6=$(read_val "IPv6 地址（不含 /64）")
-    GW6=$(read_val "IPv6 网关（可 fe80::1）")
+    IP6=$(read_val "IPv6 地址 (如 fe80::252/64)")
+    GW6=$(read_val "IPv6 网关 (如 fe80::1, 可留空)")
 
-    write_lo
-    cat >> "$CONF" <<EOF
-auto $IFACE
-iface $IFACE inet dhcp
+    grep -A 10 "^auto lo" "$CONF" > "$CONF.tmp" 2>/dev/null
 
-iface $IFACE inet6 static
-    address $IP6
-    netmask 64
-    gateway $GW6
+    cat >> "$CONF.tmp" <<EOF
+auto eth0
+iface eth0 inet dhcp
+iface eth0 inet6 static
+        address $IP6
 EOF
-    echo "[OK] 已写入 IPv6 静态配置"
+
+    [ -n "$GW6" ] && echo "        gateway $GW6" >> "$CONF.tmp"
+
+    mv "$CONF.tmp" "$CONF"
+    echo "[OK] 已写入 eth0 IPv6 静态配置"
 }
 
-# 固定本地 IPv6
-set_local_ipv6() {
-    IFACE=$(select_iface)
-    IP6=$(read_val "请输入本地 IPv6 地址（例如 240e:xxxx::252/64）")
-
-    # 临时立即生效
-    ip -6 addr flush dev "$IFACE"
-    ip -6 addr add "$IP6" dev "$IFACE"
-    echo "[OK] 临时添加 IPv6 地址 $IP6"
-
-    # 永久写入 interfaces
-    grep -q "$IP6" "$CONF" 2>/dev/null || \
-    sed -i "/iface $IFACE inet6/ a\
-    pre-up ip -6 addr flush dev $IFACE\n\
-    up ip -6 addr add $IP6 dev $IFACE" "$CONF"
-
-    echo "[OK] 永久配置已写入 $CONF"
-}
-
-# DNS 设置
+# 设置 DNS
 set_dns() {
     echo "# DNS 配置" > "$RESOLV"
     while :; do
@@ -163,16 +106,13 @@ set_dns() {
 menu() {
 clear
 cat <<EOF
-=========== Alpine 网络管理 ===========
-动态菜单，接口可选择
-
+=========== Alpine 网络管理 (eth0 + DNS) ===========
 1) IPv4 DHCP + IPv6 SLAAC
 2) IPv4 静态
 3) IPv6 静态
-4) 固定本地 IPv6 地址
-5) 设置 DNS
-6) 查看状态
-7) 应用并重启网络
+4) 设置 DNS
+5) 查看状态
+6) 应用并重启网络
 0) 退出
 =======================================
 EOF
@@ -186,10 +126,9 @@ while :; do
         1) set_dhcp; pause ;;
         2) set_static4; pause ;;
         3) set_static6; pause ;;
-        4) set_local_ipv6; pause ;;
-        5) set_dns; pause ;;
-        6) status; pause ;;
-        7) restart_net; pause ;;
+        4) set_dns; pause ;;
+        5) status; pause ;;
+        6) restart_net; pause ;;
         0) exit 0 ;;
         *) echo "无效选择"; pause ;;
     esac
