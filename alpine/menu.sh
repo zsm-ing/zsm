@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 0.0.0
+# 版本: 1.0.0
 #################################################
 
 # 定义颜色
@@ -144,8 +144,15 @@ fi
 
 show_singbox_status() {
     echo "=== SingBox 状态 ==="
-    if pgrep -f sing-box >/dev/null 2>&1; then
+    PID=$(pgrep -f sing-box)
+    if [ -n "$PID" ]; then
         echo "[OK] SingBox 正在运行"
+
+        # 获取运行时间
+        # BusyBox ps 可能不支持 etime，使用 ps -o etime
+        RUNTIME=$(ps -p $PID -o etime= 2>/dev/null | awk '{$1=$1;print}')
+        [ -z "$RUNTIME" ] && RUNTIME="未知"
+        echo "SingBox 运行时间: $RUNTIME"
     else
         echo "[WARN] SingBox 未运行"
     fi
@@ -166,11 +173,26 @@ show_singbox_status() {
     disk_total=$(df -h / | awk 'NR==2 {print $2}')
     echo "磁盘使用: $disk_used / $disk_total"
 
-    # eth0 网络流量
+    # 网络流量
     if [ -d /sys/class/net/eth0/statistics ]; then
         RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
         TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
-        echo "eth0 网络流量: 接收 $RX bytes, 发送 $TX bytes"
+
+        # 自动单位转换
+        bytes_to_human() {
+            BYTES=$1
+            if [ "$BYTES" -ge 1073741824 ]; then   # >= 1 GB
+                VAL=$(awk "BEGIN {printf \"%.2f\", $BYTES/1024/1024/1024}")
+                echo "${VAL} GB"
+            else
+                VAL=$(awk "BEGIN {printf \"%.2f\", $BYTES/1024/1024}")
+                echo "${VAL} MB"
+            fi
+        }
+
+        RX_H=$(bytes_to_human $RX)
+        TX_H=$(bytes_to_human $TX)
+        echo "eth0 网络流量: 接收 $RX_H, 发送 $TX_H"
     fi
 }
 
