@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 2.0.0
+# 版本: 2.2.2
 #################################################
 
 # 定义颜色
@@ -141,6 +141,30 @@ if [ ! -f /usr/bin/sb ]; then
     echo -e '#!/bin/bash\nbash /etc/sing-box/scripts/menu.sh menu' | tee /usr/bin/sb >/dev/null
     chmod +x /usr/bin/sb
 fi
+
+show_singbox_status() {
+    echo "=== SingBox 进程状态 ==="
+    if pgrep -x singbox >/dev/null; then
+        ps -o pid,user,%cpu,%mem,cmd -C singbox
+        echo "[OK] SingBox 正在运行"
+    else
+        echo "[WARN] SingBox 未运行"
+    fi
+
+    echo
+    echo "=== 系统资源占用 ==="
+    echo "- CPU/负载:"
+    uptime
+    echo
+    echo "- 内存使用:"
+    free -h
+    echo
+    echo "- 磁盘使用:"
+    df -h | grep -E '^/dev/'
+    echo
+    echo "- 网络流量 (eth0):"
+    ip -s link show eth0 | head -n 10
+}
 
 show_menu() {
     echo -e "${CYAN}=========== Sbshell 管理菜单 ===========${NC}"
