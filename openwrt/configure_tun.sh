@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 
 # 配置参数
 PROXY_FWMARK=1
@@ -6,7 +6,7 @@ PROXY_ROUTE_TABLE=100
 INTERFACE=$(ip route show default | awk '/default/ {print $5}')
 
 # 读取当前模式
-MODE=$(grep -E '^MODE=' /etc/sing-box/mode.conf | sed 's/^MODE=//')
+MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
 
 # 清理 TProxy 模式的防火墙规则
 clearTProxyRules() {
@@ -23,20 +23,16 @@ if [ "$MODE" = "TUN" ]; then
     clearTProxyRules
 
     # 确保目录存在
-    mkdir -p /etc/sing-box/tun
+    sudo mkdir -p /etc/sing-box/tun
 
     # 设置 TUN 模式的具体配置
     cat > /etc/sing-box/tun/nftables.conf <<EOF
-table inet sing-box {
-    chain input {
-        type filter hook input priority 0; policy accept;
-    }
-    chain forward {
-        type filter hook forward priority 0; policy accept;
-    }
-    chain output {
-        type filter hook output priority 0; policy accept;
-    }
+# 清除现有的 nftables 规则并应用新的配置
+flush ruleset
+table inet filter {
+    chain input { type filter hook input priority 0; policy accept; }
+    chain forward { type filter hook forward priority 0; policy accept; }
+    chain output { type filter hook output priority 0; policy accept; }
 }
 EOF
 
