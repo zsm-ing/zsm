@@ -1,7 +1,4 @@
 #!/bin/sh
-# Alpine LXC 网络管理菜单脚本
-# 支持接口选择、IPv4/IPv6/DNS/固定本地 IPv6
-# Author: zsm
 
 CONF="/etc/network/interfaces"
 RESOLV="/etc/resolv.conf"
