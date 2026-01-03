@@ -142,7 +142,7 @@ if [ ! -f /usr/bin/sb ]; then
     chmod +x /usr/bin/sb
 fi
 
-show_singbox_status_simple() {
+show_singbox_status() {
     echo "=== SingBox 状态 ==="
     if pgrep -f sing-box >/dev/null 2>&1; then
         echo "[OK] SingBox 正在运行"
