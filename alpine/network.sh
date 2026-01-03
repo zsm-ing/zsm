@@ -1,5 +1,5 @@
 #!/bin/sh
-# Alpine LXC 网络管理动态菜单脚本
+# Alpine LXC 网络管理菜单脚本
 # 支持接口选择、IPv4/IPv6/DNS/固定本地 IPv6
 # Author: zsm
 
@@ -22,34 +22,6 @@ status() {
     ip -6 r
 }
 
-# ------------------接口选择------------------
-select_iface() {
-    # 获取系统所有以 e 开头的接口
-    IFACES=$(ip -o link show | awk -F: '/: e/{print $2}' | tr -d ' ')
-    count=1
-    echo "请选择接口："
-    for i in $IFACES; do
-        echo "  $count) $i"
-        count=$((count + 1))
-    done
-
-    while :; do
-        read -p "输入编号: " choice
-        if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -lt "$count" ] 2>/dev/null; then
-            # 获取选中的接口
-            index=1
-            for iface in $IFACES; do
-                if [ "$index" -eq "$choice" ]; then
-                    echo "$iface"
-                    return
-                fi
-                index=$((index + 1))
-            done
-        fi
-        echo "输入无效，请重新选择"
-    done
-}
-
 read_val() {
     while :; do
         read -p "$1: " val
@@ -70,6 +42,32 @@ EOF
 restart_net() {
     rc-service networking restart
     echo "[OK] 网络服务已重启"
+}
+
+# ------------------接口选择------------------
+select_iface() {
+    IFACES=$(ip -o link show | awk -F: '/: e/{print $2}' | tr -d ' ')
+    count=1
+    echo "请选择网络接口："
+    for i in $IFACES; do
+        echo "  $count) $i"
+        count=$((count + 1))
+    done
+
+    while :; do
+        read -p "输入编号: " choice
+        if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -lt "$count" ] 2>/dev/null; then
+            index=1
+            for iface in $IFACES; do
+                if [ "$index" -eq "$choice" ]; then
+                    echo "$iface"
+                    return
+                fi
+                index=$((index + 1))
+            done
+        fi
+        echo "输入无效，请重新选择编号"
+    done
 }
 
 # ------------------配置函数------------------
@@ -128,7 +126,7 @@ EOF
 # 固定本地 IPv6
 set_local_ipv6() {
     IFACE=$(select_iface)
-    IP6=$(read_val "请输入本地 IPv6 地址（/64）")
+    IP6=$(read_val "请输入本地 IPv6 地址（例如 240e:xxxx::252/64）")
 
     # 临时立即生效
     ip -6 addr flush dev "$IFACE"
