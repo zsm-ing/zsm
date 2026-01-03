@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 2.0.0
+# 版本: 2.0.2
 #################################################
 
 # 定义颜色
@@ -148,33 +148,32 @@ show_singbox_status() {
     if [ -n "$PID" ]; then
         echo "[OK] SingBox 正在运行"
 
-        # 获取进程启动时间，计算运行时长
+        RUNTIME="未知"
+        # 检查 /proc/PID/stat 是否存在
         if [ -r /proc/$PID/stat ]; then
-            # 进程启动时间（clock ticks）
-            start_ticks=$(awk '{print $22}' /proc/$PID/stat)
-            # 获取系统时钟频率
-            Hertz=$(getconf CLK_TCK 2>/dev/null)
-            [ -z "$Hertz" ] && Hertz=100  # 默认 100
-            # 系统开机时间 (秒)
-            uptime_sec=$(awk '{print int($1)}' /proc/uptime)
-            # 当前进程启动时间 (秒)
-            proc_start=$(awk -v st="$start_ticks" -v hz="$Hertz" 'BEGIN {print st/hz}')
-            # 运行时间 = 系统运行时间 - 进程启动时间
-            runtime_sec=$(awk -v u="$uptime_sec" -v p="$proc_start" 'BEGIN {print u - p}')
-            # 转换为 天-小时:分钟:秒
-            days=$(awk -v s="$runtime_sec" 'BEGIN {printf "%d", s/86400}')
-            hours=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%86400)/3600}')
-            mins=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%3600)/60}')
-            secs=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", s%60}')
-            if [ "$days" -gt 0 ]; then
-                RUNTIME="${days}天 ${hours}:${mins}:${secs}"
-            else
-                RUNTIME="${hours}:${mins}:${secs}"
+            # 获取启动时间（clock ticks）
+            start_ticks=$(awk '{print $22}' /proc/$PID/stat 2>/dev/null)
+            # 如果 start_ticks 非空且是数字
+            if [ -n "$start_ticks" ] && echo "$start_ticks" | grep -Eq '^[0-9]+$'; then
+                Hertz=$(getconf CLK_TCK 2>/dev/null)
+                [ -z "$Hertz" ] && Hertz=100
+                uptime_sec=$(awk '{print int($1)}' /proc/uptime)
+                proc_start=$(awk -v st="$start_ticks" -v hz="$Hertz" 'BEGIN {print st/hz}')
+                runtime_sec=$(awk -v u="$uptime_sec" -v p="$proc_start" 'BEGIN {print u - p}')
+                # 避免 runtime_sec 负数或空
+                if [ -n "$runtime_sec" ] && awk "BEGIN{exit !($runtime_sec>=0)}"; then
+                    days=$(awk -v s="$runtime_sec" 'BEGIN {printf "%d", s/86400}')
+                    hours=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%86400)/3600}')
+                    mins=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%3600)/60}')
+                    secs=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", s%60}')
+                    if [ "$days" -gt 0 ]; then
+                        RUNTIME="${days}天 ${hours}:${mins}:${secs}"
+                    else
+                        RUNTIME="${hours}:${mins}:${secs}"
+                    fi
+                fi
             fi
-        else
-            RUNTIME="未知"
         fi
-
         echo "SingBox 运行时间: $RUNTIME"
     else
         echo "[WARN] SingBox 未运行"
@@ -196,7 +195,7 @@ show_singbox_status() {
     if [ -d /sys/class/net/eth0/statistics ]; then
         RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
         TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
-
+        # 自动单位转换
         bytes_to_human() {
             BYTES=$1
             if [ "$BYTES" -ge 1073741824 ]; then
@@ -207,29 +206,10 @@ show_singbox_status() {
                 echo "${VAL} MB"
             fi
         }
-
         RX_H=$(bytes_to_human $RX)
         TX_H=$(bytes_to_human $TX)
         echo "eth0 网络流量: 接收 $RX_H, 发送 $TX_H"
     fi
-}
-
-show_menu() {
-    echo -e "${CYAN}=========== Sbshell 管理菜单 ===========${NC}"
-    echo -e "${GREEN}1. Tproxy/Tun模式切换${NC}"
-    echo -e "${GREEN}2. 手动更新配置文件${NC}"
-    echo -e "${GREEN}3. 自动更新配置文件${NC}"
-    echo -e "${GREEN}4. 手动启动 sing-box${NC}"
-    echo -e "${GREEN}5. 手动停止 sing-box${NC}"
-    echo -e "${GREEN}6. 设置参数${NC}"
-    echo -e "${GREEN}7. 设置自启动${NC}"
-    echo -e "${GREEN}8. 常用命令${NC}"
-    echo -e "${GREEN}9. 更新脚本${NC}"
-    echo -e "${GREEN}10. 更新面板${NC}"
-    echo -e "${GREEN}11. 更新 sing-box${NC}"
-    echo -e "${GREEN}12. 网络设置${NC}"
-    echo -e "${GREEN}0. 退出${NC}"
-    echo -e "${CYAN}=======================================${NC}"
 }
 
 handle_choice() {
