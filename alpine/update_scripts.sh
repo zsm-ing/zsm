@@ -70,6 +70,7 @@ SCRIPTS=(
     "clean_nft.sh"
     "set_defaults.sh"
     "commands.sh"
+    "network.sh"
     "switch_mode.sh"
     "manage_autostart.sh"
     "check_config.sh"
