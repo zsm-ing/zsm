@@ -46,13 +46,19 @@ restart_net() {
 
 # ------------------接口选择------------------
 select_iface() {
-    IFACES=$(ip -o link show | awk -F: '/: e/{print $2}' | tr -d ' ')
+    # 列出所有非 lo 接口
+    IFACES=$(ip -o link show | awk -F: '$2 !~ /lo/{print $2}' | tr -d ' ')
     count=1
     echo "请选择网络接口："
     for i in $IFACES; do
         echo "  $count) $i"
         count=$((count + 1))
     done
+
+    if [ -z "$IFACES" ]; then
+        echo "未检测到任何网络接口！"
+        exit 1
+    fi
 
     while :; do
         read -p "输入编号: " choice
