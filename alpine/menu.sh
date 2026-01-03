@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 2.0.2
+# 版本: 3.0.0
 #################################################
 
 # 定义颜色
@@ -178,6 +178,8 @@ show_singbox_status() {
     else
         echo "[WARN] SingBox 未运行"
     fi
+        MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
+        echo "代理模式: $MODE"
 
     echo
     echo "=== 系统资源 ==="
