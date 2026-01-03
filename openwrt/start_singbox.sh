@@ -16,6 +16,16 @@ check_mode() {
     fi
 }
 
+# 应用防火墙规则
+apply_firewall() {
+    MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
+    if [ "$MODE" = "TProxy" ]; then
+        bash "$SCRIPT_DIR/configure_tproxy.sh"
+    elif [ "$MODE" = "TUN" ]; then
+        bash "$SCRIPT_DIR/configure_tun.sh"
+    fi
+}
+
 # 启动 sing-box 服务
 start_singbox() {
     echo -e "${CYAN}检测是否处于非代理环境...${NC}"
