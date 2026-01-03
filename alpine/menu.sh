@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 3.0.0
+# 版本: 1.0.0
 #################################################
 
 # 定义颜色
@@ -147,40 +147,15 @@ show_singbox_status() {
     PID=$(pgrep -f sing-box)
     if [ -n "$PID" ]; then
         echo "[OK] SingBox 正在运行"
-
-        RUNTIME="未知"
-        # 检查 /proc/PID/stat 是否存在
-        if [ -r /proc/$PID/stat ]; then
-            # 获取启动时间（clock ticks）
-            start_ticks=$(awk '{print $22}' /proc/$PID/stat 2>/dev/null)
-            # 如果 start_ticks 非空且是数字
-            if [ -n "$start_ticks" ] && echo "$start_ticks" | grep -Eq '^[0-9]+$'; then
-                Hertz=$(getconf CLK_TCK 2>/dev/null)
-                [ -z "$Hertz" ] && Hertz=100
-                uptime_sec=$(awk '{print int($1)}' /proc/uptime)
-                proc_start=$(awk -v st="$start_ticks" -v hz="$Hertz" 'BEGIN {print st/hz}')
-                runtime_sec=$(awk -v u="$uptime_sec" -v p="$proc_start" 'BEGIN {print u - p}')
-                # 避免 runtime_sec 负数或空
-                if [ -n "$runtime_sec" ] && awk "BEGIN{exit !($runtime_sec>=0)}"; then
-                    days=$(awk -v s="$runtime_sec" 'BEGIN {printf "%d", s/86400}')
-                    hours=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%86400)/3600}')
-                    mins=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", (s%3600)/60}')
-                    secs=$(awk -v s="$runtime_sec" 'BEGIN {printf "%02d", s%60}')
-                    if [ "$days" -gt 0 ]; then
-                        RUNTIME="${days}天 ${hours}:${mins}:${secs}"
-                    else
-                        RUNTIME="${hours}:${mins}:${secs}"
-                    fi
-                fi
-            fi
-        fi
-        echo "SingBox 运行时间: $RUNTIME"
     else
         echo "[WARN] SingBox 未运行"
     fi
-        MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
+    MODE="未知"
+        if [ -r /etc/sing-box/mode.conf ]; then
+            MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
+            [ -z "$MODE" ] && MODE="未知"
+        fi
         echo "代理模式: $MODE"
-
     echo
     echo "=== 系统资源 ==="
     load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/ //g')
