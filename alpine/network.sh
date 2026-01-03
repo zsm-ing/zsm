@@ -1,4 +1,7 @@
 #!/bin/sh
+# Alpine LXC 网络管理菜单脚本（接口选择修复版）
+# 支持接口选择、IPv4/IPv6/DNS/固定本地 IPv6
+# Author: zsm
 
 CONF="/etc/network/interfaces"
 RESOLV="/etc/resolv.conf"
@@ -43,7 +46,7 @@ restart_net() {
 
 # ------------------接口选择------------------
 select_iface() {
-    # 列出所有非 lo 接口
+    # 列出所有非 lo 接口（包括带 @ 的接口名）
     IFACES=$(ip -o link show | awk -F: '$2 !~ /lo/{print $2}' | tr -d ' ')
     count=1
     echo "请选择网络接口："
