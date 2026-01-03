@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.0.0
+# 版本: 2.0.0
 #################################################
 
 # 定义颜色
@@ -188,7 +188,23 @@ show_singbox_status() {
         echo "eth0 网络流量: 接收 $RX_H, 发送 $TX_H"
     fi
 }
-
+show_menu() {
+    echo -e "${CYAN}=========== Sbshell 管理菜单 ===========${NC}"
+    echo -e "${GREEN}1. Tproxy/Tun模式切换${NC}"
+    echo -e "${GREEN}2. 手动更新配置文件${NC}"
+    echo -e "${GREEN}3. 自动更新配置文件${NC}"
+    echo -e "${GREEN}4. 手动启动 sing-box${NC}"
+    echo -e "${GREEN}5. 手动停止 sing-box${NC}"
+    echo -e "${GREEN}6. 设置参数${NC}"
+    echo -e "${GREEN}7. 设置自启动${NC}"
+    echo -e "${GREEN}8. 常用命令${NC}"
+    echo -e "${GREEN}9. 更新脚本${NC}"
+    echo -e "${GREEN}10. 更新面板${NC}"
+    echo -e "${GREEN}11. 更新sing-box${NC}"
+    echo -e "${GREEN}12. 网络设置${NC}"
+    echo -e "${GREEN}0. 退出${NC}"
+    echo -e "${CYAN}=======================================${NC}"
+}
 handle_choice() {
     read -rp "请选择操作: " choice
     case $choice in
