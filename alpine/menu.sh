@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 5.5.5
+# 版本: 6.6.6
 #################################################
 
 # 定义颜色
@@ -150,12 +150,15 @@ show_singbox_status() {
     else
         echo "[WARN] SingBox 未运行"
     fi
+
+    # 代理模式（兼容 BusyBox）
     MODE="未知"
-        if [ -r /etc/sing-box/mode.conf ]; then
-            MODE=$(grep -oP '(?<=^MODE=).*' /etc/sing-box/mode.conf)
-            [ -z "$MODE" ] && MODE="未知"
-        fi
-        echo "代理模式: $MODE"
+    if [ -r /etc/sing-box/mode.conf ]; then
+        MODE=$(grep '^MODE=' /etc/sing-box/mode.conf | cut -d= -f2)
+        [ -z "$MODE" ] && MODE="未知"
+    fi
+    echo "代理模式: $MODE"
+
     echo
     echo "=== 系统资源 ==="
     load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/ //g')
@@ -172,7 +175,7 @@ show_singbox_status() {
     if [ -d /sys/class/net/eth0/statistics ]; then
         RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
         TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
-        # 自动单位转换
+
         bytes_to_human() {
             BYTES=$1
             if [ "$BYTES" -ge 1073741824 ]; then
@@ -183,11 +186,13 @@ show_singbox_status() {
                 echo "${VAL} MB"
             fi
         }
+
         RX_H=$(bytes_to_human $RX)
         TX_H=$(bytes_to_human $TX)
         echo "eth0 网络流量: 接收 $RX_H, 发送 $TX_H"
     fi
 }
+
 show_menu() {
     echo -e "${CYAN}=========== Sbshell 管理菜单 ===========${NC}"
     echo -e "${GREEN}1. Tproxy/Tun模式切换${NC}"
