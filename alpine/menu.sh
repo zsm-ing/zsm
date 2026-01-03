@@ -174,7 +174,7 @@ handle_choice() {
         9) bash "$SCRIPT_DIR/update_scripts.sh" ;;
         10) bash "$SCRIPT_DIR/update_ui.sh" ;;
         11) bash "$SCRIPT_DIR/update_singbox.sh" ;;
-        12) bash "$SCRIPT_DIR/network.sh ;;
+        12) bash "$SCRIPT_DIR/network.sh" ;;
         0) exit 0 ;;
         *) echo -e "${RED}无效的选择${NC}" ;;
     esac
