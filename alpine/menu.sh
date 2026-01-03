@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 2.2.2
+# 版本: 3.3.3
 #################################################
 
 # 定义颜色
@@ -207,6 +207,7 @@ handle_choice() {
 
 # 主循环
 while true; do
+    show_singbox_status
     show_menu
     handle_choice
 done
