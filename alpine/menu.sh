@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.3
+# 版本: 1.4
 #################################################
 
 # 定义颜色
@@ -144,50 +144,52 @@ fi
 
 show_singbox_status() {
     echo "=== SingBox 状态 ==="
-    
-    # 首先尝试使用 pidof 获取进程ID
+
+    # 获取 Sing-box PID
     if command -v pidof >/dev/null 2>&1; then
         SINGBOX_PID=$(pidof sing-box 2>/dev/null | awk '{print $1}')
     fi
-    
-    # 如果 pidof 失败，回退到 pgrep
     if [ -z "$SINGBOX_PID" ]; then
         SINGBOX_PID=$(pgrep -f sing-box | awk '{print $1}')
     fi
-    
+
     if [ -n "$SINGBOX_PID" ]; then
         echo "[OK] SingBox 正在运行 (PID: $SINGBOX_PID)"
 
         # ===============================
-        # 获取运行时间（兼容 BusyBox / Alpine）
+        # 运行时间（使用 ps -o lstart）
         # ===============================
-        STAT_FILE="/proc/$SINGBOX_PID/stat"
-        if [ -r "$STAT_FILE" ]; then
-            # 第 22 个字段是进程启动时间 jiffies
-            START_JIFFY=$(awk '{print $22}' "$STAT_FILE")
-            CLK_TCK=$(getconf CLK_TCK)
-            
-            # 系统开机时间秒数
-            UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime)
-            
-            # 当前时间戳
-            NOW_TS=$(date +%s)
-            
-            # 计算进程启动时间戳
-            PROC_START_TS=$(( NOW_TS - (UPTIME_SEC - START_JIFFY / CLK_TCK) ))
-            
-            # 运行时间秒数
-            ELAPSED=$(( NOW_TS - PROC_START_TS ))
-            
-            DAYS=$(( ELAPSED / 86400 ))
-            HOURS=$(( (ELAPSED % 86400) / 3600 ))
-            MINUTES=$(( (ELAPSED % 3600) / 60 ))
-            SECONDS=$(( ELAPSED % 60 ))
-            
-            echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
+        if command -v ps >/dev/null 2>&1; then
+            # 仅当 ps 支持 GNU ps
+            PS_VERSION=$(ps --version 2>/dev/null | head -n1 | grep -i "procps")
+            if [ -n "$PS_VERSION" ]; then
+                START_TIME=$(ps -p "$SINGBOX_PID" -o lstart= 2>/dev/null)
+                if [ -n "$START_TIME" ]; then
+                    # 转换为时间戳
+                    START_TS=$(date -d "$START_TIME" +%s 2>/dev/null)
+                    if [ -n "$START_TS" ]; then
+                        NOW_TS=$(date +%s)
+                        ELAPSED=$((NOW_TS - START_TS))
+
+                        DAYS=$((ELAPSED / 86400))
+                        HOURS=$(((ELAPSED % 86400) / 3600))
+                        MINUTES=$(((ELAPSED % 3600) / 60))
+                        SECONDS=$((ELAPSED % 60))
+
+                        echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
+                    else
+                        echo "运行时间: 无法解析启动时间"
+                    fi
+                else
+                    echo "运行时间: 无法获取"
+                fi
+            else
+                echo "运行时间: BusyBox ps 不支持 lstart"
+            fi
         else
-            echo "运行时间: 无法获取进程信息"
+            echo "运行时间: ps 命令不可用"
         fi
+
     else
         echo "[WARN] SingBox 未运行"
     fi
@@ -202,17 +204,21 @@ show_singbox_status() {
 
     echo
     echo "=== 系统资源 ==="
+    # CPU 负载
     load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/ //g')
     echo "CPU 负载: $load"
 
+    # 内存使用
     mem_used=$(free -h | awk '/Mem:/ {print $3}')
     mem_total=$(free -h | awk '/Mem:/ {print $2}')
     echo "内存使用: $mem_used / $mem_total"
 
+    # 磁盘使用
     disk_used=$(df -h / | awk 'NR==2 {print $3}')
     disk_total=$(df -h / | awk 'NR==2 {print $2}')
     echo "磁盘使用: $disk_used / $disk_total"
 
+    # 网络流量
     if [ -d /sys/class/net/eth0/statistics ]; then
         RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
         TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
