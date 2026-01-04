@@ -156,9 +156,6 @@ show_singbox_status() {
     if [ -n "$SINGBOX_PID" ]; then
         echo "[OK] SingBox 正在运行 (PID: $SINGBOX_PID)"
 
-        # ===============================
-        # 运行时间（使用 ps -o etimes 获取秒数）
-        # ===============================
         if command -v ps >/dev/null 2>&1; then
             ELAPSED=$(ps -p "$SINGBOX_PID" -o etimes= | tr -d ' ')
             if [ -n "$ELAPSED" ] && [ "$ELAPSED" -gt 0 ]; then
