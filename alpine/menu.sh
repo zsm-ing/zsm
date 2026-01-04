@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.4
+# 版本: 1.5
 #################################################
 
 # 定义颜色
@@ -157,34 +157,18 @@ show_singbox_status() {
         echo "[OK] SingBox 正在运行 (PID: $SINGBOX_PID)"
 
         # ===============================
-        # 运行时间（使用 ps -o lstart）
+        # 运行时间（使用 ps -o etimes 获取秒数）
         # ===============================
         if command -v ps >/dev/null 2>&1; then
-            # 仅当 ps 支持 GNU ps
-            PS_VERSION=$(ps --version 2>/dev/null | head -n1 | grep -i "procps")
-            if [ -n "$PS_VERSION" ]; then
-                START_TIME=$(ps -p "$SINGBOX_PID" -o lstart= 2>/dev/null)
-                if [ -n "$START_TIME" ]; then
-                    # 转换为时间戳
-                    START_TS=$(date -d "$START_TIME" +%s 2>/dev/null)
-                    if [ -n "$START_TS" ]; then
-                        NOW_TS=$(date +%s)
-                        ELAPSED=$((NOW_TS - START_TS))
-
-                        DAYS=$((ELAPSED / 86400))
-                        HOURS=$(((ELAPSED % 86400) / 3600))
-                        MINUTES=$(((ELAPSED % 3600) / 60))
-                        SECONDS=$((ELAPSED % 60))
-
-                        echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
-                    else
-                        echo "运行时间: 无法解析启动时间"
-                    fi
-                else
-                    echo "运行时间: 无法获取"
-                fi
+            ELAPSED=$(ps -p "$SINGBOX_PID" -o etimes= | tr -d ' ')
+            if [ -n "$ELAPSED" ] && [ "$ELAPSED" -gt 0 ]; then
+                DAYS=$((ELAPSED / 86400))
+                HOURS=$(((ELAPSED % 86400) / 3600))
+                MINUTES=$(((ELAPSED % 3600) / 60))
+                SECONDS=$((ELAPSED % 60))
+                echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
             else
-                echo "运行时间: BusyBox ps 不支持 lstart"
+                echo "运行时间: 无法获取"
             fi
         else
             echo "运行时间: ps 命令不可用"
