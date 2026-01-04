@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.0
+# 版本: 1.2
 #################################################
 
 # 定义颜色
@@ -144,70 +144,48 @@ fi
 
 show_singbox_status() {
     echo "=== SingBox 状态 ==="
-    PID=$(pgrep -f sing-box)
-    if [ -n "$PID" ]; then
-        echo "[OK] SingBox 正在运行"
+    
+    # 首先尝试使用 pidof 获取进程ID
+    if command -v pidof >/dev/null 2>&1; then
+        SINGBOX_PID=$(pidof sing-box 2>/dev/null | awk '{print $1}')
+    fi
+    
+    # 如果 pidof 失败，回退到 pgrep
+    if [ -z "$SINGBOX_PID" ]; then
+        SINGBOX_PID=$(pgrep -f sing-box)
+    fi
+    
+    if [ -n "$SINGBOX_PID" ]; then
+        echo "[OK] SingBox 正在运行 (PID: $SINGBOX_PID)"
 
-        # 使用 ps -p $(pidof sing-box) -o lstart 获取启动时间
-        calculate_runtime() {
-            local singbox_pid
-            # 获取 sing-box 进程ID
-            singbox_pid=$(pidof sing-box 2>/dev/null | awk '{print $1}')
-            
-            # 如果没有通过 pidof 找到，使用 pgrep 的结果
-            if [ -z "$singbox_pid" ]; then
-                singbox_pid="$PID"
-            fi
-            
+        # 只使用您指定的方法：ps -p $(pidof sing-box) -o lstart
+        if [ -n "$SINGBOX_PID" ]; then
             # 获取启动时间
-            local start_time
-            start_time=$(ps -p "$singbox_pid" -o lstart= 2>/dev/null | head -1)
+            START_TIME=$(ps -p "$SINGBOX_PID" -o lstart= 2>/dev/null)
             
-            if [ -n "$start_time" ]; then
-                # 解析 ps lstart 格式: "Mon Jan 31 12:34:56 2024"
-                # 转换为时间戳
-                local start_ts=""
+            if [ -n "$START_TIME" ]; then
+                # 将启动时间转换为时间戳
+                START_TS=$(date -d "$START_TIME" +%s 2>/dev/null)
                 
-                # 尝试将启动时间转换为时间戳
-                # 这里假设系统支持 date -d 参数（大多数 Linux 系统）
-                if date -d "$start_time" +%s 2>/dev/null >/dev/null; then
-                    start_ts=$(date -d "$start_time" +%s 2>/dev/null)
+                if [ -n "$START_TS" ]; then
+                    # 计算运行时间（秒）
+                    NOW_TS=$(date +%s)
+                    ELAPSED=$((NOW_TS - START_TS))
+                    
+                    # 格式化输出
+                    DAYS=$((ELAPSED / 86400))
+                    HOURS=$(((ELAPSED % 86400) / 3600))
+                    MINUTES=$(((ELAPSED % 3600) / 60))
+                    SECONDS=$((ELAPSED % 60))
+                    
+                    echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
                 else
-                    # 如果 date -d 不支持，尝试另一种格式
-                    start_ts=$(date +%s -d "$start_time" 2>/dev/null)
+                    echo "运行时间: 无法解析启动时间"
                 fi
-                
-                if [ -n "$start_ts" ]; then
-                    local now_ts
-                    now_ts=$(date +%s)
-                    local elapsed=$((now_ts - start_ts))
-                    
-                    # 格式化运行时间
-                    local days=$((elapsed / 86400))
-                    local hours=$(((elapsed % 86400) / 3600))
-                    local minutes=$(((elapsed % 3600) / 60))
-                    local seconds=$((elapsed % 60))
-                    
-                    if [ $days -gt 0 ]; then
-                        echo "运行时间: ${days}天 ${hours}小时 ${minutes}分 ${seconds}秒"
-                    elif [ $hours -gt 0 ]; then
-                        echo "运行时间: ${hours}小时 ${minutes}分 ${seconds}秒"
-                    elif [ $minutes -gt 0 ]; then
-                        echo "运行时间: ${minutes}分 ${seconds}秒"
-                    else
-                        echo "运行时间: ${seconds}秒"
-                    fi
-                    return 0
-                fi
+            else
+                echo "运行时间: 无法获取启动时间"
             fi
-            
-            # 如果获取失败，显示无法获取
-            echo "运行时间: 无法获取"
-            return 1
-        }
-        
-        # 调用计算函数
-        calculate_runtime
+        fi
     else
         echo "[WARN] SingBox 未运行"
     fi
