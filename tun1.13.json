@@ -118,7 +118,7 @@
         { "rule_set": "geosite-apple", "outbound": "🍏 Apple" },
         { "rule_set": ["geoip-telegram", "geosite-telegram"], "outbound": "📲 Telegram" },
         { "rule_set": "geosite-geolocation-!cn", "outbound": "🚁 国外域名" },
-        { "action": "bypass", "rule_set": ["geoip-cn", "geosite-private", "geosite-cn"], "outbound": "🌏 全球直连" }
+        { "action": "bypass", "rule_set": ["geoip-cn", "geosite-private", "geosite-cn"], "outbound": "" }
       ],
       
       "rule_set": [
