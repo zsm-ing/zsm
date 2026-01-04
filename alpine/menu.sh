@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.2.3
+# 版本: 1.3
 #################################################
 
 # 定义颜色
@@ -149,8 +149,8 @@ show_singbox_status() {
         echo "[OK] SingBox 正在运行"
 
         # 获取运行时间（兼容 BusyBox / Alpine）
-        if [ -d /proc/$PID ]; then
-            START_TS=$(stat -c %Y /proc/$PID 2>/dev/null || date +%s)
+        if [ -d "/proc/$PID" ]; then
+            START_TS=$(stat -c %Y "/proc/$PID" 2>/dev/null || date +%s)
             NOW_TS=$(date +%s)
             ELAPSED=$((NOW_TS - START_TS))
 
