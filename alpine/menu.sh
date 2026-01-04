@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 2.0.0
+# 版本: 1.2.3
 #################################################
 
 # 定义颜色
@@ -148,19 +148,18 @@ show_singbox_status() {
     if [ -n "$PID" ]; then
         echo "[OK] SingBox 正在运行"
 
-        # 获取启动时间并计算运行时长（兼容 BusyBox）
-        START_TIME=$(ps -p $PID -o lstart=)
-        if [ -n "$START_TIME" ]; then
-            START_TS=$(date -d "$START_TIME" +%s 2>/dev/null || date -j -f "%a %b %d %T %Y" "$START_TIME" +%s 2>/dev/null)
+        # 获取运行时间（兼容 BusyBox / Alpine）
+        if [ -d /proc/$PID ]; then
+            START_TS=$(stat -c %Y /proc/$PID 2>/dev/null || date +%s)
             NOW_TS=$(date +%s)
-            if [ -n "$START_TS" ] && [ -n "$NOW_TS" ]; then
-                ELAPSED=$((NOW_TS - START_TS))
-                DAYS=$((ELAPSED / 86400))
-                HOURS=$(( (ELAPSED % 86400) / 3600 ))
-                MINUTES=$(( (ELAPSED % 3600) / 60 ))
-                SECONDS=$((ELAPSED % 60))
-                echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
-            fi
+            ELAPSED=$((NOW_TS - START_TS))
+
+            DAYS=$((ELAPSED / 86400))
+            HOURS=$(( (ELAPSED % 86400) / 3600 ))
+            MINUTES=$(( (ELAPSED % 3600) / 60 ))
+            SECONDS=$((ELAPSED % 60))
+
+            echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
         fi
     else
         echo "[WARN] SingBox 未运行"
