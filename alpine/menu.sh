@@ -2,7 +2,7 @@
 
 #################################################
 # 描述: Alpine 官方 sing-box 全自动脚本
-# 版本: 1.2
+# 版本: 1.3
 #################################################
 
 # 定义颜色
@@ -152,39 +152,41 @@ show_singbox_status() {
     
     # 如果 pidof 失败，回退到 pgrep
     if [ -z "$SINGBOX_PID" ]; then
-        SINGBOX_PID=$(pgrep -f sing-box)
+        SINGBOX_PID=$(pgrep -f sing-box | awk '{print $1}')
     fi
     
     if [ -n "$SINGBOX_PID" ]; then
         echo "[OK] SingBox 正在运行 (PID: $SINGBOX_PID)"
 
-        # 只使用您指定的方法：ps -p $(pidof sing-box) -o lstart
-        if [ -n "$SINGBOX_PID" ]; then
-            # 获取启动时间
-            START_TIME=$(ps -p "$SINGBOX_PID" -o lstart= 2>/dev/null)
+        # ===============================
+        # 获取运行时间（兼容 BusyBox / Alpine）
+        # ===============================
+        STAT_FILE="/proc/$SINGBOX_PID/stat"
+        if [ -r "$STAT_FILE" ]; then
+            # 第 22 个字段是进程启动时间 jiffies
+            START_JIFFY=$(awk '{print $22}' "$STAT_FILE")
+            CLK_TCK=$(getconf CLK_TCK)
             
-            if [ -n "$START_TIME" ]; then
-                # 将启动时间转换为时间戳
-                START_TS=$(date -d "$START_TIME" +%s 2>/dev/null)
-                
-                if [ -n "$START_TS" ]; then
-                    # 计算运行时间（秒）
-                    NOW_TS=$(date +%s)
-                    ELAPSED=$((NOW_TS - START_TS))
-                    
-                    # 格式化输出
-                    DAYS=$((ELAPSED / 86400))
-                    HOURS=$(((ELAPSED % 86400) / 3600))
-                    MINUTES=$(((ELAPSED % 3600) / 60))
-                    SECONDS=$((ELAPSED % 60))
-                    
-                    echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
-                else
-                    echo "运行时间: 无法解析启动时间"
-                fi
-            else
-                echo "运行时间: 无法获取启动时间"
-            fi
+            # 系统开机时间秒数
+            UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime)
+            
+            # 当前时间戳
+            NOW_TS=$(date +%s)
+            
+            # 计算进程启动时间戳
+            PROC_START_TS=$(( NOW_TS - (UPTIME_SEC - START_JIFFY / CLK_TCK) ))
+            
+            # 运行时间秒数
+            ELAPSED=$(( NOW_TS - PROC_START_TS ))
+            
+            DAYS=$(( ELAPSED / 86400 ))
+            HOURS=$(( (ELAPSED % 86400) / 3600 ))
+            MINUTES=$(( (ELAPSED % 3600) / 60 ))
+            SECONDS=$(( ELAPSED % 60 ))
+            
+            echo "运行时间: ${DAYS}天 ${HOURS}小时 ${MINUTES}分 ${SECONDS}秒"
+        else
+            echo "运行时间: 无法获取进程信息"
         fi
     else
         echo "[WARN] SingBox 未运行"
