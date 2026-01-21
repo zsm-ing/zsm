@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: caddy-sync
+  cancel-in-progress: false
+
 jobs:
   sync-build:
     runs-on: ubuntu-latest
@@ -23,6 +27,9 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Read local caddy-version
         id: local
         run: |
@@ -32,21 +39,19 @@ jobs:
             echo "version=v0.0.0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Get official Caddy version
+      - name: Get official Caddy version (include pre-release)
         id: official
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           OFFICIAL=$(curl -s \
             -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/caddyserver/caddy/releases/latest \
-            | grep '"tag_name"' \
-            | head -n1 \
-            | cut -d '"' -f4)
+            https://api.github.com/repos/caddyserver/caddy/releases \
+            | jq -r 'sort_by(.published_at) | last | .tag_name')
 
           echo "Official version: $OFFICIAL"
 
-          if [ -z "$OFFICIAL" ]; then
+          if [ -z "$OFFICIAL" ] || [ "$OFFICIAL" = "null" ]; then
             echo "Failed to fetch official version"
             exit 1
           fi
@@ -62,7 +67,7 @@ jobs:
             echo "update=true" >> $GITHUB_OUTPUT
           fi
 
-      # ========= 只有官方更新才继续 =========
+      # ========= 只有版本变化才继续 =========
 
       - name: Update caddy-version & tag
         if: steps.compare.outputs.update == 'true'
@@ -95,13 +100,13 @@ jobs:
           xcaddy build \
             --with github.com/mholt/caddy-l4 \
             --with github.com/caddy-dns/cloudflare \
-            --output caddy-alpine-amd64-$VERSION
+            --output caddy-alpine-amd64-${{ env.VERSION }}
 
       - name: Verify binary
         if: steps.compare.outputs.update == 'true'
         run: |
-          file caddy-alpine-amd64-$VERSION
-          ldd caddy-alpine-amd64-$VERSION || true
+          file caddy-alpine-amd64-${{ env.VERSION }}
+          ldd caddy-alpine-amd64-${{ env.VERSION }} || true
 
       - name: Create GitHub Release
         if: steps.compare.outputs.update == 'true'
