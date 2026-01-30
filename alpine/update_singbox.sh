@@ -1,5 +1,5 @@
 #!/bin/sh
-# Alpine sing-box 更新脚本（curl / 多架构 / 自动回滚）
+# Alpine sing-box 更新脚本（curl / 多架构 / 自动回滚 / 无临时状态文件）
 
 # =====================
 # 配置区
@@ -19,84 +19,108 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # =====================
-# 临时文件清理
-# =====================
-trap 'rm -f /tmp/releases.json /tmp/sb_url; rm -rf "$TEMP_DIR"' EXIT
-
-# =====================
 # 依赖检查
 # =====================
 check_dependencies() {
     for cmd in jq curl tar find uname; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            echo -e "${RED}错误：缺少必要依赖 $cmd，请运行 apk add $cmd 安装${NC}"
+        command -v "$cmd" >/dev/null 2>&1 || {
+            echo -e "${RED}错误：缺少依赖 $cmd，请运行 apk add $cmd${NC}"
             exit 1
-        fi
+        }
     done
 }
 
 # =====================
-# 架构自动检测
+# 架构检测
 # =====================
 detect_arch() {
     case "$(uname -m)" in
-        x86_64) ARCH="amd64" ;;
+        x86_64)  ARCH="amd64" ;;
         aarch64) ARCH="arm64" ;;
         armv7l|armv7*) ARCH="armv7" ;;
         armv6l|armv6*) ARCH="armv6" ;;
         mipsel*) ARCH="mipsel" ;;
-        mips*) ARCH="mips" ;;
-        *) echo -e "${RED}不支持的架构: $(uname -m)${NC}"; exit 1 ;;
+        mips*)   ARCH="mips" ;;
+        *)
+            echo -e "${RED}不支持的架构: $(uname -m)${NC}"
+            exit 1
+            ;;
     esac
     echo -e "${CYAN}检测到架构: $ARCH${NC}"
 }
 
 # =====================
-# 安装指定版本（优化错误处理）
+# 带重试的下载
+# =====================
+fetch_with_retry() {
+    url="$1"
+    out="$2"
+    i=0
+    while [ "$i" -lt "$MAX_RETRY" ]; do
+        curl -fsSL --connect-timeout 10 --max-time 30 -o "$out" "$url" && return 0
+        i=$((i+1))
+        sleep 2
+    done
+    return 1
+}
+
+# =====================
+# 下载资产（支持 ghproxy）
+# =====================
+download_asset() {
+    url="$1"
+    out="$2"
+    fetch_with_retry "$url" "$out" && return 0
+    echo -e "${CYAN}直连失败，尝试 ghproxy...${NC}"
+    fetch_with_retry "https://ghproxy.com/$url" "$out"
+}
+
+# =====================
+# 获取 releases（stdout）
+# =====================
+fetch_releases() {
+    api="https://api.github.com/repos/$REPO/releases?per_page=5"
+    fetch_with_retry "$api" /dev/stdout || {
+        echo -e "${RED}获取 releases 失败${NC}"
+        exit 1
+    }
+}
+
+# =====================
+# 安装指定版本
 # =====================
 install_version() {
     ver="$1"
     releases="$2"
     [ -z "$ver" ] && return 1
 
-    candidates="
-sing-box-$ver-linux-$ARCH-musl.tar.gz
-sing-box-$ver-linux-$ARCH.tar.gz
-"
+    bin_url=$(echo "$releases" | jq -r --arg ver "$ver" --arg arch "$ARCH" '
+        .[] | .assets[] |
+        select(
+            .name == ("sing-box-" + $ver + "-linux-" + $arch + "-musl.tar.gz") or
+            .name == ("sing-box-" + $ver + "-linux-" + $arch + ".tar.gz")
+        ) | .browser_download_url
+    ' | head -n1)
 
-    bin_url=""
-
-    echo "$releases" | jq -r '.[] | .assets[] | "\(.name) \(.browser_download_url)"' |
-    while read -r name url; do
-        for expected in $candidates; do
-            if [ "$name" = "$expected" ]; then
-                bin_url="$url"
-                echo "$bin_url" > /tmp/sb_url
-                break 2
-            fi
-        done
-    done
-
-    [ -f /tmp/sb_url ] && bin_url=$(cat /tmp/sb_url)
-
-    if [ -z "$bin_url" ]; then
+    [ -z "$bin_url" ] && {
         echo -e "${RED}未找到匹配的 release 资产${NC}"
         return 1
-    fi
+    }
 
+    rm -rf "$TEMP_DIR"
     mkdir -p "$TEMP_DIR"
 
     echo -e "${CYAN}下载 $bin_url${NC}"
     download_asset "$bin_url" "$TEMP_DIR/sing-box.tar.gz" || return 1
 
     echo -e "${CYAN}解压文件${NC}"
-    if ! tar -xzf "$TEMP_DIR/sing-box.tar.gz" -C "$TEMP_DIR"; then
-        echo -e "${RED}解压失败，请检查下载的文件是否完整${NC}"
-        return 1
-    fi
+    tar -xzf "$TEMP_DIR/sing-box.tar.gz" -C "$TEMP_DIR" || return 1
 
-    bin_file=$(find "$TEMP_DIR" -type f -name sing-box 2>/dev/null | head -n1)
-    [ ! -f "$bin_file" ] && return 1
+    bin_file=$(find "$TEMP_DIR" -type f -path "*/sing-box" -perm -111 | head -n1)
+    [ ! -f "$bin_file" ] && {
+        echo -e "${RED}未找到 sing-box 可执行文件${NC}"
+        return 1
+    }
 
     rc-service sing-box stop 2>/dev/null
 
@@ -104,8 +128,10 @@ sing-box-$ver-linux-$ARCH.tar.gz
     mv "$bin_file" "$BIN_PATH"
     chmod 755 "$BIN_PATH"
 
-    rc-update add sing-box default
+    rc-update show | grep -q sing-box || rc-update add sing-box default
     rc-service sing-box restart
+
+    rm -rf "$TEMP_DIR"
 
     if "$BIN_PATH" version >/dev/null 2>&1; then
         echo -e "${GREEN}sing-box $ver 安装成功${NC}"
@@ -116,11 +142,26 @@ sing-box-$ver-linux-$ARCH.tar.gz
 }
 
 # =====================
-# 菜单（优化版本检测）
+# 回滚
+# =====================
+rollback_version() {
+    if [ -f "$BACKUP_BIN" ]; then
+        rc-service sing-box stop 2>/dev/null
+        mv "$BACKUP_BIN" "$BIN_PATH"
+        chmod 755 "$BIN_PATH"
+        rc-service sing-box restart
+        echo -e "${GREEN}已回滚到旧版本${NC}"
+    else
+        echo -e "${RED}无备份可回滚${NC}"
+    fi
+}
+
+# =====================
+# 菜单
 # =====================
 show_menu() {
-    cur=$("$BIN_PATH" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-    rel=$(fetch_releases)
+    cur=$("$BIN_PATH" version 2>/dev/null | awk '/version/ {print $3}')
+    rel="$(fetch_releases)"
 
     stable=$(echo "$rel" | jq -r '[.[]|select(.prerelease==false)][0].tag_name' | sed 's/^v//')
     beta=$(echo "$rel" | jq -r '[.[]|select(.prerelease==true)][0].tag_name' | sed 's/^v//')
@@ -131,7 +172,7 @@ show_menu() {
     echo "2) 测试版 : $beta"
     echo "3) 回退"
     echo "0) 退出"
-    echo -n "请选择: "
+    printf "请选择: "
     read -r c
 
     case "$c" in
@@ -142,3 +183,14 @@ show_menu() {
         *) echo "无效输入" ;;
     esac
 }
+
+# =====================
+# 主入口
+# =====================
+main() {
+    check_dependencies
+    detect_arch
+    show_menu
+}
+
+main
