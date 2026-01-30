@@ -1,5 +1,5 @@
 #!/bin/sh
-# Alpine sing-box 更新脚本（curl / 多架构 / 自动回滚 / 无临时状态文件）
+# Alpine sing-box 更新脚本（curl / 多架构 / 自动回滚 / GitHub API 403 修复版）
 
 # =====================
 # 配置区
@@ -9,9 +9,10 @@ BIN_PATH="/usr/bin/sing-box"
 BACKUP_BIN="$BIN_PATH.bak"
 TEMP_DIR="/tmp/sing-box_update"
 MAX_RETRY=3
+UA="sing-box-updater"
 
 # =====================
-# 颜色定义
+# 颜色
 # =====================
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -24,7 +25,7 @@ NC='\033[0m'
 check_dependencies() {
     for cmd in jq curl tar find uname; do
         command -v "$cmd" >/dev/null 2>&1 || {
-            echo -e "${RED}错误：缺少依赖 $cmd，请运行 apk add $cmd${NC}"
+            echo -e "${RED}缺少依赖: $cmd，请运行 apk add $cmd${NC}"
             exit 1
         }
     done
@@ -50,14 +51,19 @@ detect_arch() {
 }
 
 # =====================
-# 带重试的下载
+# 带 Header 的重试下载
 # =====================
 fetch_with_retry() {
     url="$1"
     out="$2"
     i=0
     while [ "$i" -lt "$MAX_RETRY" ]; do
-        curl -fsSL --connect-timeout 10 --max-time 30 -o "$out" "$url" && return 0
+        curl -fsSL \
+            -H "User-Agent: $UA" \
+            -H "Accept: application/vnd.github+json" \
+            --connect-timeout 10 \
+            --max-time 30 \
+            -o "$out" "$url" && return 0
         i=$((i+1))
         sleep 2
     done
@@ -76,12 +82,17 @@ download_asset() {
 }
 
 # =====================
-# 获取 releases（stdout）
+# 获取 releases（API 也走 ghproxy）
 # =====================
 fetch_releases() {
     api="https://api.github.com/repos/$REPO/releases?per_page=5"
-    fetch_with_retry "$api" /dev/stdout || {
-        echo -e "${RED}获取 releases 失败${NC}"
+
+    fetch_with_retry "$api" /dev/stdout && return
+
+    echo -e "${CYAN}GitHub API 直连失败，尝试 ghproxy...${NC}"
+
+    fetch_with_retry "https://ghproxy.com/$api" /dev/stdout || {
+        echo -e "${RED}获取 releases 失败（被限流或网络受限）${NC}"
         exit 1
     }
 }
@@ -94,11 +105,11 @@ install_version() {
     releases="$2"
     [ -z "$ver" ] && return 1
 
-    bin_url=$(echo "$releases" | jq -r --arg ver "$ver" --arg arch "$ARCH" '
+    bin_url=$(echo "$releases" | jq -r --arg v "$ver" --arg a "$ARCH" '
         .[] | .assets[] |
         select(
-            .name == ("sing-box-" + $ver + "-linux-" + $arch + "-musl.tar.gz") or
-            .name == ("sing-box-" + $ver + "-linux-" + $arch + ".tar.gz")
+            .name == ("sing-box-" + $v + "-linux-" + $a + "-musl.tar.gz") or
+            .name == ("sing-box-" + $v + "-linux-" + $a + ".tar.gz")
         ) | .browser_download_url
     ' | head -n1)
 
@@ -168,8 +179,8 @@ show_menu() {
 
     echo -e "${CYAN}==== Sing-box 更新助手 ====${NC}"
     echo -e "当前版本: ${GREEN}${cur:-未安装}${NC}"
-    echo "1) 稳定版 : $stable"
-    echo "2) 测试版 : $beta"
+    echo "1) 稳定版 : ${stable:-无}"
+    echo "2) 测试版 : ${beta:-无}"
     echo "3) 回退"
     echo "0) 退出"
     printf "请选择: "
