@@ -19,6 +19,11 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # =====================
+# 临时文件清理
+# =====================
+trap 'rm -f /tmp/releases.json /tmp/sb_url; rm -rf "$TEMP_DIR"' EXIT
+
+# =====================
 # 依赖检查
 # =====================
 check_dependencies() {
@@ -47,53 +52,13 @@ detect_arch() {
 }
 
 # =====================
-# 带重试的下载
-# =====================
-fetch_with_retry() {
-    url="$1"
-    output="$2"
-    i=0
-    while [ $i -lt $MAX_RETRY ]; do
-        curl -sL --connect-timeout 10 --max-time 30 -o "$output" "$url" && return 0
-        i=$((i+1))
-        sleep 2
-    done
-    return 1
-}
-
-# =====================
-# 下载 release 资产（支持镜像）
-# =====================
-download_asset() {
-    url="$1"
-    out="$2"
-    fetch_with_retry "$url" "$out" && return 0
-    echo -e "${CYAN}直连失败，尝试 ghproxy...${NC}"
-    fetch_with_retry "https://ghproxy.com/$url" "$out"
-}
-
-# =====================
-# 获取 releases
-# =====================
-fetch_releases() {
-    api="https://api.github.com/repos/$REPO/releases?per_page=5"
-    if fetch_with_retry "$api" /tmp/releases.json; then
-        cat /tmp/releases.json
-        return
-    fi
-    echo -e "${RED}获取 releases 失败${NC}"
-    exit 1
-}
-
-# =====================
-# 安装指定版本
+# 安装指定版本（优化错误处理）
 # =====================
 install_version() {
     ver="$1"
     releases="$2"
     [ -z "$ver" ] && return 1
 
-    # 两种可能的命名方式
     candidates="
 sing-box-$ver-linux-$ARCH-musl.tar.gz
 sing-box-$ver-linux-$ARCH.tar.gz
@@ -112,21 +77,23 @@ sing-box-$ver-linux-$ARCH.tar.gz
         done
     done
 
-    [ -f /tmp/sb_url ] && bin_url=$(cat /tmp/sb_url) && rm -f /tmp/sb_url
+    [ -f /tmp/sb_url ] && bin_url=$(cat /tmp/sb_url)
 
     if [ -z "$bin_url" ]; then
         echo -e "${RED}未找到匹配的 release 资产${NC}"
         return 1
     fi
 
-    [ -d "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
     mkdir -p "$TEMP_DIR"
 
     echo -e "${CYAN}下载 $bin_url${NC}"
     download_asset "$bin_url" "$TEMP_DIR/sing-box.tar.gz" || return 1
 
     echo -e "${CYAN}解压文件${NC}"
-    tar -xzf "$TEMP_DIR/sing-box.tar.gz" -C "$TEMP_DIR" || return 1
+    if ! tar -xzf "$TEMP_DIR/sing-box.tar.gz" -C "$TEMP_DIR"; then
+        echo -e "${RED}解压失败，请检查下载的文件是否完整${NC}"
+        return 1
+    fi
 
     bin_file=$(find "$TEMP_DIR" -type f -name sing-box 2>/dev/null | head -n1)
     [ ! -f "$bin_file" ] && return 1
@@ -140,8 +107,6 @@ sing-box-$ver-linux-$ARCH.tar.gz
     rc-update add sing-box default
     rc-service sing-box restart
 
-    rm -rf "$TEMP_DIR"
-
     if "$BIN_PATH" version >/dev/null 2>&1; then
         echo -e "${GREEN}sing-box $ver 安装成功${NC}"
     else
@@ -151,25 +116,10 @@ sing-box-$ver-linux-$ARCH.tar.gz
 }
 
 # =====================
-# 回滚
-# =====================
-rollback_version() {
-    if [ -f "$BACKUP_BIN" ]; then
-        rc-service sing-box stop 2>/dev/null
-        mv "$BACKUP_BIN" "$BIN_PATH"
-        chmod 755 "$BIN_PATH"
-        rc-service sing-box restart
-        echo -e "${GREEN}已回滚到旧版本${NC}"
-    else
-        echo -e "${RED}无备份可回滚${NC}"
-    fi
-}
-
-# =====================
-# 菜单
+# 菜单（优化版本检测）
 # =====================
 show_menu() {
-    cur=$("$BIN_PATH" version 2>/dev/null | awk '/version/ {print $3}')
+    cur=$("$BIN_PATH" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
     rel=$(fetch_releases)
 
     stable=$(echo "$rel" | jq -r '[.[]|select(.prerelease==false)][0].tag_name' | sed 's/^v//')
@@ -192,14 +142,3 @@ show_menu() {
         *) echo "无效输入" ;;
     esac
 }
-
-# =====================
-# 主入口
-# =====================
-main() {
-    check_dependencies
-    detect_arch
-    show_menu
-}
-
-main
