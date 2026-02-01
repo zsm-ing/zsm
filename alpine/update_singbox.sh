@@ -1,5 +1,5 @@
 #!/bin/sh
-# Alpine sing-box 更新脚本（ghproxy 默认，自动回滚 / 多架构 / BusyBox 兼容）
+# Alpine sing-box 更新脚本（官方 API + ghproxy 下载 + 自动回滚 / 多架构）
 
 REPO="SagerNet/sing-box"
 BIN_PATH="/usr/bin/sing-box"
@@ -56,7 +56,7 @@ fetch_with_retry() {
 }
 
 # =====================
-# 下载 release 资产
+# 下载 release 资产 (走 ghproxy)
 # =====================
 download_asset() {
     url="$1"
@@ -70,10 +70,10 @@ download_asset() {
 }
 
 # =====================
-# 获取 releases
+# 获取 releases (官方 GitHub API)
 # =====================
 fetch_releases() {
-    api="https://ghproxy.com/https://api.github.com/repos/$REPO/releases?per_page=5"
+    api="https://api.github.com/repos/$REPO/releases?per_page=5"
     fetch_with_retry "$api" /tmp/releases.json || {
         echo -e "${RED}获取 releases 失败${NC}"
         exit 1
