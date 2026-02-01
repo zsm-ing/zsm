@@ -1,5 +1,5 @@
 #!/bin/sh
-# Alpine sing-box 更新脚本（BusyBox / 多架构 / 自动回滚）
+# Alpine sing-box 更新脚本（ghproxy 默认，自动回滚 / 多架构 / BusyBox 兼容）
 
 REPO="SagerNet/sing-box"
 BIN_PATH="/usr/bin/sing-box"
@@ -12,6 +12,9 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# =====================
+# 依赖检查
+# =====================
 check_dependencies() {
     for cmd in jq curl tar find uname; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -21,6 +24,9 @@ check_dependencies() {
     done
 }
 
+# =====================
+# 架构检测
+# =====================
 detect_arch() {
     case "$(uname -m)" in
         x86_64) ARCH="amd64" ;;
@@ -29,31 +35,45 @@ detect_arch() {
         armv6l|armv6*) ARCH="armv6" ;;
         mipsel*) ARCH="mipsel" ;;
         mips*) ARCH="mips" ;;
-        *) echo -e "${RED}不支持架构$(uname -m)${NC}"; exit 1 ;;
+        *) echo -e "${RED}不支持架构: $(uname -m)${NC}"; exit 1 ;;
     esac
     echo -e "${CYAN}检测到架构: $ARCH${NC}"
 }
 
+# =====================
+# curl 带重试
+# =====================
 fetch_with_retry() {
     url="$1"
     out="$2"
     i=0
     while [ $i -lt $MAX_RETRY ]; do
-        curl -fsSL "$url" -o "$out" && return 0
+        curl -fsSL -H "User-Agent: sing-box-update" "$url" -o "$out" && return 0
         i=$((i+1))
         sleep 2
     done
     return 1
 }
 
+# =====================
+# 下载 release 资产
+# =====================
 download_asset() {
-    fetch_with_retry "$1" "$2" && return 0
-    echo -e "${CYAN}直连失败，尝试 ghproxy${NC}"
-    fetch_with_retry "https://ghproxy.com/$1" "$2"
+    url="$1"
+    out="$2"
+
+    echo -e "${CYAN}下载: $url${NC}"
+    fetch_with_retry "https://ghproxy.com/$url" "$out" || {
+        echo -e "${RED}下载失败: $url${NC}"
+        return 1
+    }
 }
 
+# =====================
+# 获取 releases
+# =====================
 fetch_releases() {
-    api="https://api.github.com/repos/$REPO/releases?per_page=5"
+    api="https://ghproxy.com/https://api.github.com/repos/$REPO/releases?per_page=5"
     fetch_with_retry "$api" /tmp/releases.json || {
         echo -e "${RED}获取 releases 失败${NC}"
         exit 1
@@ -61,6 +81,9 @@ fetch_releases() {
     cat /tmp/releases.json
 }
 
+# =====================
+# 安装指定版本
+# =====================
 install_version() {
     ver="$1"
     rel="$2"
@@ -78,7 +101,6 @@ install_version() {
     rm -rf "$TEMP_DIR"
     mkdir -p "$TEMP_DIR"
 
-    echo -e "${CYAN}下载 $expected${NC}"
     download_asset "$url" "$TEMP_DIR/sb.tgz" || return 1
 
     tar -xzf "$TEMP_DIR/sb.tgz" -C "$TEMP_DIR" || return 1
@@ -99,6 +121,9 @@ install_version() {
     fi
 }
 
+# =====================
+# 回滚
+# =====================
 rollback_version() {
     if [ -f "$BACKUP_BIN" ]; then
         mv "$BACKUP_BIN" "$BIN_PATH"
@@ -110,6 +135,9 @@ rollback_version() {
     fi
 }
 
+# =====================
+# 菜单
+# =====================
 show_menu() {
     cur=$("$BIN_PATH" version 2>/dev/null | awk '{print $3}')
     rel=$(fetch_releases)
