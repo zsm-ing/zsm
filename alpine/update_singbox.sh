@@ -2,7 +2,7 @@
 # Alpine sing-box 更新脚本（HTML / 抗封锁稳定版）
 
 REPO="SagerNet/sing-box"
-BIN_PATH="/usr/local/bin/sing-box"
+BIN_PATH="/usr/bin/sing-box"
 BACKUP_BIN="$BIN_PATH.bak"
 TEMP_DIR="/tmp/sing-box_update"
 MAX_RETRY=3
