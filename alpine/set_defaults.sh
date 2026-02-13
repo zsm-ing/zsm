@@ -3,7 +3,7 @@
 # 配置路径
 DEFAULTS_FILE="/etc/sing-box/defaults.conf"
 MANUAL_FILE="/etc/sing-box/manual.conf"
-HEADERS_FILE="/tmp/sing-box-headers.txt"  # 改为 /tmp 防止权限问题
+HEADERS_FILE="/tmp/sing-box-headers.txt"
 POOL_FILE="/etc/sing-box/nodes.list"
 
 # 颜色定义
