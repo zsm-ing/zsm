@@ -1,235 +1,169 @@
 #!/bin/bash
 
+# 配置路径
 DEFAULTS_FILE="/etc/sing-box/defaults.conf"
 MANUAL_FILE="/etc/sing-box/manual.conf"
-HEADERS_FILE="/etc/sing-box/headers.txt"
+HEADERS_FILE="/tmp/sing-box-headers.txt"  # 改为 /tmp 防止权限问题
 POOL_FILE="/etc/sing-box/nodes.list"
 
-# 定义颜色
+# 颜色定义
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # 无颜色
+NC='\033[0m'
 
-# 错误处理函数
-error_exit() {
-    echo -e "${RED}❌ $1${NC}"
-    exit 1
-}
+# 错误处理
+error_exit() { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
 # 依赖检查
 for cmd in curl jq awk sed; do
     command -v $cmd >/dev/null 2>&1 || error_exit "缺少依赖: $cmd"
 done
 
-# URL 编码函数
-urlencode() {
-    jq -rn --arg v "$1" '$v|@uri'
-}
+# URL 编码
+urlencode() { jq -rn --arg v "$1" '$v|@uri'; }
 
-# 通用函数：更新指定配置文件中的 key=value，如果不存在则新增
+# 更新配置文件
 update_conf_file() {
-    local file="$1"
-    local key="$2"
-    local value="$3"
-
-    # 如果文件不存在，先创建空文件
+    local file="$1" key="$2" value="$3"
     [ -f "$file" ] || touch "$file"
-
-    tmp=$(mktemp) || { echo "无法创建临时文件"; return 1; }
+    local tmp=$(mktemp)
     awk -F= -v k="$key" -v v="$value" '
         BEGIN { found=0 }
-        $1==k { print k"="v; found=1; next }
-        { print }
+        {
+            split($0, a, "=");
+            gsub(/^[ \t]+|[ \t]+$/, "", a[1]);
+            if(a[1]==k) { print k"="v; found=1 }
+            else { print $0 }
+        }
         END { if(!found) print k"="v }
     ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
-# 读取配置函数
+# 读取配置
 get_config() {
-    local key=$1
-    # 文件不存在时返回空
-    [ -f "$DEFAULTS_FILE" ] || { echo ""; return 0; }
-    # awk 去掉 key 和 value 两边空格，匹配 key
-    awk -F= -v k="$key" '{
+    [ -f "$DEFAULTS_FILE" ] || return 0
+    awk -F= -v k="$1" '{
         gsub(/^[ \t]+|[ \t]+$/, "", $1);
         gsub(/^[ \t]+|[ \t]+$/, "", $2);
         if($1==k) print $2
     }' "$DEFAULTS_FILE"
 }
 
-# 更新配置函数
-set_config() {
-    local key=$1
-    local value=$2
-
-    # 更新 defaults.conf
-    update_conf_file "$DEFAULTS_FILE" "$key" "$value"
-    echo -e "${GREEN}已更新 $key=$value${NC}"
-
-    # 如果是 SUBSCRIPTION_URL，同步更新 manual.conf
-    if [ "$key" == "SUBSCRIPTION_URL" ]; then
-        update_conf_file "$MANUAL_FILE" "$key" "$value"
-        echo -e "${GREEN}manual.conf 文件中也已更新${NC}"
-    fi
-}
-
-# 初始化池文件
-[ -f "$POOL_FILE" ] || touch "$POOL_FILE"
-
-# 自动选择最快节点
+# 核心功能：获取最快节点
 get_best_node() {
     NAV_URL=$(get_config NAV_URL)
-    [ -z "$NAV_URL" ] && echo "错误：未设置 NAV_URL！" && exit 1
+    [ -z "$NAV_URL" ] && error_exit "未设置 NAV_URL！"
 
-    echo "=== 解析导航页：$NAV_URL ==="
+    echo -e "${CYAN}=== 正在解析导航页: $NAV_URL ===${NC}"
+    
+    # 增强正则匹配：匹配包含 hongxingyun 的完整 https 地址
+    RAW_HTML=$(curl -fsSL --max-time 10 "$NAV_URL")
+    NEW_LINKS=$(echo "$RAW_HTML" | grep -Eo 'https?://[a-zA-Z0-9.-]*hongxingyun[a-zA-Z0-9.-]*\.[a-z]{2,}' | sort -u)
 
-    RAW_HTML=$(curl -fsS --max-time 5 "$NAV_URL" 2>/dev/null)
-
-    NEW_LINKS=$(echo "$RAW_HTML" \
-        | grep -Eo 'hongxingyun\.[A-Za-z0-9]{2,6}' \
-        | sed 's#^#https://#' \
-        | sort -u)
-
-    echo "从导航页获得："
-    echo "$NEW_LINKS"
-    echo
-
-    echo ">>> 测试新获取的地址"
-
-    for link in $NEW_LINKS; do
-        curl -o /dev/null -s --max-time 3 --connect-timeout 2 "$link"
-        if [ $? -eq 0 ]; then
-            echo "  $link ✓ 可用"
+    if [ -z "$NEW_LINKS" ]; then
+        echo -e "${YELLOW}⚠ 导航页未提取到新域名，保持现有地址池${NC}"
+    else
+        echo -e "${GREEN}发现新地址:${NC}\n$NEW_LINKS"
+        for link in $NEW_LINKS; do
+            # 去掉末尾斜杠
+            link=${link%/}
             grep -qx "$link" "$POOL_FILE" || echo "$link" >> "$POOL_FILE"
-        else
-            echo "  $link ✗ 不可用（不加入池）"
-        fi
-    done
+        done
+    fi
 
-    echo
-    echo ">>> 地址池内容："
-    cat "$POOL_FILE" 2>/dev/null || echo "(空)"
-    echo "---------------"
-
-    echo ">>> 从地址池全部重新测速（失败剔除）"
-
+    echo -e "\n${CYAN}>>> 正在对地址池进行延迟测试...${NC}"
     BEST=""
-    BEST_LAT=999999
+    BEST_LAT=9999
     TMP_POOL=$(mktemp)
 
     while read -r node; do
         [ -z "$node" ] && continue
-
-        LAT=$(curl -o /dev/null -s --max-time 3 --connect-timeout 2 -w "%{time_starttransfer}" "$node")
-        RET=$?
-
-        if [ $RET -ne 0 ]; then
-            echo "  $node ✗ 已失效，剔除"
-            continue
-        fi
-
-        LAT_MS=$(awk "BEGIN {print int($LAT * 1000)}")
-        echo "  $node 延迟：${LAT_MS}ms"
-
-        echo "$node" >> "$TMP_POOL"
-
-        if [ "$LAT_MS" -lt "$BEST_LAT" ]; then
-            BEST="$node"
-            BEST_LAT="$LAT_MS"
+        # 使用 -w %{time_connect} 获取连接时间，UA 模拟浏览器避免屏蔽
+        LAT=$(curl -o /dev/null -sL --max-time 3 --connect-timeout 2 \
+             -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+             -w "%{time_connect}" "$node")
+        
+        if [ $? -eq 0 ] && [ "$LAT" != "0.000" ]; then
+            LAT_MS=$(awk "BEGIN {print int($LAT * 1000)}")
+            echo -e "  $node ${GREEN}${LAT_MS}ms${NC}"
+            echo "$node" >> "$TMP_POOL"
+            if [ "$LAT_MS" -lt "$BEST_LAT" ]; then
+                BEST="$node"
+                BEST_LAT="$LAT_MS"
+            fi
+        else
+            echo -e "  $node ${RED}连接失败${NC}"
         fi
     done < "$POOL_FILE"
 
     mv "$TMP_POOL" "$POOL_FILE"
 
     if [ -z "$BEST" ]; then
-        echo "⚠ 地址池已空，尝试使用历史 JC_URL"
         BEST=$(get_config JC_URL)
-        [ -z "$BEST" ] && error_exit "没有可用入口，也没有历史 JC_URL"
-        BEST_LAT="未知"
+        echo -e "${YELLOW}⚠ 无可用新节点，使用历史地址: $BEST${NC}"
+    else
+        echo -e "${GREEN}★ 最佳入口: $BEST (${BEST_LAT}ms)${NC}"
     fi
 
-    echo "=== 最终选择入口：$BEST（${BEST_LAT}ms）==="
-
     update_conf_file "$DEFAULTS_FILE" "JC_URL" "$BEST"
-    echo "已更新 JC_URL=$BEST"
-
     echo "$BEST"
 }
 
-# 自动登录并获取订阅地址
+# 核心功能：自动登录并获取订阅
 auto_update_subscription() {
     USER=$(get_config USER)
     PASS=$(get_config PASS)
-
-    if [ -z "$USER" ] || [ -z "$PASS" ]; then
-        read -rp "请输入登录邮箱: " USER
-        read -rp "请输入登录密码: " PASS
-        set_config USER "$USER"
-        set_config PASS "$PASS"
-    fi
-
     BASE_URL=$(get_config JC_URL)
 
-    echo "尝试登录..."
-    LOGIN=$(curl -s -D $HEADERS_FILE \
+    [ -z "$USER" ] || [ -z "$PASS" ] && error_exit "账号或密码未配置，请先执行选项 6"
+
+    echo -e "${CYAN}正在尝试登录 ${BASE_URL} ...${NC}"
+    
+    # 修复 Headers 文件路径
+    rm -f "$HEADERS_FILE"
+    LOGIN=$(curl -s -L -D "$HEADERS_FILE" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
       -d "email=$USER&password=$PASS" \
       "$BASE_URL/hxapicc/passport/auth/login")
 
-    echo "登录返回原始数据: $LOGIN"
+    # 提取 Cookie
+    COOKIE=$(grep -i "Set-Cookie" "$HEADERS_FILE" | head -n1 | sed -E 's/Set-Cookie:[[:space:]]*([^;]+).*/\1/')
+    [ -n "$COOKIE" ] && update_conf_file "$DEFAULTS_FILE" "COOKIE" "$COOKIE"
 
-    COOKIE=$(grep -i "Set-Cookie" headers.txt | head -n1 | sed -E 's/Set-Cookie:[[:space:]]*([^;]+).*/\1/')
-    if [ -n "$COOKIE" ]; then
-        set_config COOKIE "$COOKIE"
-        echo "✅ 已保存 Cookie 到 defaults.conf"
-    else
-        echo "❌ 未获取到 Cookie"
-    fi
-
+    # 提取 Token
     AUTH=$(echo "$LOGIN" | jq -r '.data.auth_data // .data.token // .auth_data // .token')
-    if [ -n "$AUTH" ] && [ "$AUTH" != "null" ]; then
-        case $AUTH in
-            Bearer*) ;;
-            *) AUTH="Bearer $AUTH" ;;
-        esac
-        set_config AUTH "$AUTH"
-        echo "✅ 已保存 Bearer Token 到 defaults.conf"
+    if [ "$AUTH" != "null" ] && [ -n "$AUTH" ]; then
+        [[ $AUTH != Bearer* ]] && AUTH="Bearer $AUTH"
+        update_conf_file "$DEFAULTS_FILE" "AUTH" "$AUTH"
     else
-        echo "❌ 登录失败，未获取到 Bearer Token"
-        return 1
+        error_exit "登录失败，接口返回: $LOGIN"
     fi
 
-    echo "✅ 登录成功，获取到认证信息: $AUTH"
+    echo -e "${GREEN}✅ 登录成功，正在获取订阅链接...${NC}"
 
-    SUB_INFO=$(curl -s -H "Authorization: $AUTH" -H "Cookie: $COOKIE" \
+    SUB_INFO=$(curl -s -L -H "Authorization: $AUTH" -H "Cookie: $COOKIE" \
+      -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
       "$BASE_URL/hxapicc/user/getSubscribe")
 
-    echo "订阅接口返回原始数据: $SUB_INFO"
-
     SUB_URL=$(echo "$SUB_INFO" | jq -r '.data.subscribe_url')
+
     if [ -n "$SUB_URL" ] && [ "$SUB_URL" != "null" ]; then
-        echo "✅ 订阅地址: $SUB_URL"
-        set_config SUBSCRIPTION_URL "$SUB_URL"
+        echo -e "${GREEN}✅ 成功获取订阅: ${SUB_URL}${NC}"
+        update_conf_file "$DEFAULTS_FILE" "SUBSCRIPTION_URL" "$SUB_URL"
+        update_conf_file "$MANUAL_FILE" "SUBSCRIPTION_URL" "$SUB_URL"
     else
-        echo "❌ 未能获取订阅地址，请检查接口返回"
+        echo -e "${RED}❌ 订阅解析失败。接口原始返回: $SUB_INFO${NC}"
     fi
 }
 
-# 参数模式执行
-if [[ $# -gt 0 ]]; then
-    choice=$1
-    case $choice in
-        5)
-            get_best_node
-            auto_update_subscription
-            exit 0
-            ;;
-        *)
-            echo "未知参数: $choice"
-            exit 1
-            ;;
-    esac
+# 处理参数模式（用于定时任务）
+if [[ "$1" == "5" ]]; then
+    get_best_node
+    auto_update_subscription
+    exit 0
 fi
 
 # 主菜单
