@@ -26,8 +26,8 @@
  {
    "servers": 
    [
-     {"tag": "local", "type": "udp", "server": "10.10.10.1"},
-     {"tag": "google", "type": "https", "server": "dns.google", "domain_resolver": "local", "detour": "🚀 节点选择"},
+     {"tag": "local", "type": "udp", "server": "10.10.10.1", "server_port": 5353},
+     {"tag": "google", "type": "udp", "server": "10.10.10.1", "server_port": 5335},
      {"tag": "fakeip","type": "fakeip","inet4_range": "198.18.0.0/15","inet6_range": "fcab::/18"}
      ],
    "rules": 
