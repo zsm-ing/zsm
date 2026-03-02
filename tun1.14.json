@@ -22,27 +22,37 @@
     }
   },
 
-"dns": 
- {
-   "servers": 
-   [
-     {"tag": "local", "type": "udp", "server": "10.10.10.1", "server_port": 5353},
-     {"tag": "google", "type": "udp", "server": "10.10.10.1", "server_port": 5335},
-     {"tag": "fakeip","type": "fakeip","inet4_range": "198.18.0.0/15","inet6_range": "fcab::/18"}
-     ],
-   "rules": 
-   [ 
-     {"query_type": "HTTPS", "action": "reject"},
-     {"clash_mode": "direct","server": "local"},
-     {"clash_mode": "global","server": "google"},
-     {"rule_set": "geosite-cn","server": "local"},
-     {"rule_set": "geosite-geolocation-!cn","server": "google"}
-    ],
-    "cache_capacity": 2048,
-    "independent_cache": true,
-    "final": "google",
-    "strategy": "prefer_ipv4"
-  },
+"dns": {
+  "servers": [
+    {
+      "tag": "local",
+      "address": "10.10.10.1",
+      "port": 5353
+    },
+    {
+      "tag": "google",
+      "address": "10.10.10.1",
+      "port": 5335
+    },
+    {
+      "tag": "fakeip",
+      "type": "fakeip",
+      "inet4_range": "198.18.0.0/15",
+      "inet6_range": "fcab::/18"
+    }
+  ],
+  "rules": [
+    { "query_type": "HTTPS", "action": "reject" },
+    { "clash_mode": "direct", "server": "local" },
+    { "clash_mode": "global", "server": "google" },
+    { "rule_set": "geosite-cn", "server": "local" },
+    { "rule_set": "geosite-geolocation-!cn", "server": "google" }
+  ],
+  "cache_capacity": 2048,
+  "independent_cache": true,
+  "final": "google",
+  "strategy": "prefer_ipv4"
+},
   
   "inbounds": [
   {
