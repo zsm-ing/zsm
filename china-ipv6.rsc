@@ -1,5 +1,5 @@
 ################################################################
-# 中国IPv6地址列表 - 自动生成 (2026-05-16)
+# 中国IPv6地址列表 - 自动生成 (2026-05-23)
 # 来源: APNIC | 条目数: 2041
 ################################################################
 /ipv6 firewall address-list remove [find where list="CN"]
@@ -756,7 +756,6 @@ add address=2402:4f80::/32 list=CN
 add address=2402:50a0::/32 list=CN
 add address=2402:5180::/32 list=CN
 add address=2402:51a0::/32 list=CN
-add address=2402:52c0::/32 list=CN
 add address=2402:5340::/32 list=CN
 add address=2402:5820::/32 list=CN
 add address=2402:5880::/32 list=CN
@@ -770,6 +769,7 @@ add address=2402:5d00::/32 list=CN
 add address=2402:5e00::/32 list=CN
 add address=2402:5e40::/32 list=CN
 add address=2402:5ec0::/32 list=CN
+add address=2402:5f20::/32 list=CN
 add address=2402:5f40::/32 list=CN
 add address=2402:6280::/32 list=CN
 add address=2402:62c0::/32 list=CN
