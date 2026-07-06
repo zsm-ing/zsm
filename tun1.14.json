@@ -4,6 +4,22 @@
     "level": "info",
     "timestamp": true
   },
+  "services": [
+    {
+      "type": "api",
+      "tag": "api",
+      "listen": "0.0.0.0",
+      "listen_port": 8080,
+      "secret": "2545094859",
+
+      "dashboard": {
+        "enabled": true,
+        "download_url": "https://github.com/SagerNet/sing-box-dashboard/archive/refs/heads/gh-pages.zip",
+        "path": "/etc/sing-box/dashboard",
+        "update_interval": "24h"
+      }
+    }
+  ], 
   "experimental": {
     "clash_api": {
       "external_controller": "0.0.0.0:9090",
